@@ -31,11 +31,10 @@
   });
 </script>
 
-<script src="https://unpkg.com/react@18/umd/react.production.min.js" onload="document.getElementById('boot-status').textContent='React chargé...'"></script>
-<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" onload="document.getElementById('boot-status').textContent='ReactDOM chargé...'"></script>
-<script src="https://unpkg.com/@babel/standalone/babel.min.js" onload="document.getElementById('boot-status').textContent='Babel chargé, compilation en cours...'"></script>
-
+<script crossorigin="anonymous" src="https://unpkg.com/react@18/umd/react.production.min.js" onload="document.getElementById('boot-status').textContent='React chargé...'"></script>
+<script crossorigin="anonymous" src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" onload="document.getElementById('boot-status').textContent='ReactDOM chargé...'"></script>
 <script type="text/babel" data-presets="react">
+  
 const { useState, useEffect, useRef } = React;
 
 const STATS = {
@@ -46,7 +45,8 @@ const STATS = {
 };
 
 const DIFF = {
-  easy: { label: "Facile", mult: 1 },
+  easy: { l<script crossorigin="anonymous" src="https://unpkg.com/@babel/standalone/babel.min.js" onload="document.getElementById('boot-status').textContent='Babel chargé, compilation en cours...'"></script>
+  abel: "Facile", mult: 1 },
   medium: { label: "Moyen", mult: 1.5 },
   hard: { label: "Difficile", mult: 2 },
   epic: { label: "Épique", mult: 3 },
