@@ -17,11 +17,23 @@
 </style>
 </head>
 <body>
-<div id="root"></div>
+<div id="root">
+  <pre id="boot-status" style="color:#7C8896;padding:16px;font-family:monospace;font-size:12px;white-space:pre-wrap;">Chargement des scripts...</pre>
+</div>
 
-<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script>
+  window.addEventListener('error', function (e) {
+    var el = document.getElementById('boot-status') || document.getElementById('root');
+    var msg = 'ERREUR: ' + (e.message || 'inconnue') + '\nFichier: ' + (e.filename || '?') + '\nLigne: ' + (e.lineno || '?');
+    el.style.color = '#FF5C5C';
+    el.textContent = msg;
+    console.error(e);
+  });
+</script>
+
+<script src="https://unpkg.com/react@18/umd/react.production.min.js" onload="document.getElementById('boot-status').textContent='React chargé...'"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" onload="document.getElementById('boot-status').textContent='ReactDOM chargé...'"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js" onload="document.getElementById('boot-status').textContent='Babel chargé, compilation en cours...'"></script>
 
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef } = React;
