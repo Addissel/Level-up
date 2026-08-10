@@ -1,0 +1,846 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+<title>Level Up</title>
+<link rel="manifest" href="manifest.json" />
+<meta name="theme-color" content="#0A0E14" />
+<link rel="icon" href="icon-192.png" />
+<link rel="apple-touch-icon" href="icon-192.png" />
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Inter:wght@400;500;600&display=swap');
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body { margin: 0; background: #0A0E14; color: #E7ECEF; font-family: 'Inter', system-ui, sans-serif; }
+  .font-hud { font-family: 'Chakra Petch', sans-serif; }
+  input, button { font-family: inherit; }
+  @keyframes slideUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes fadeScale { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: scale(1); } }
+</style>
+</head>
+<body>
+<div id="root">
+  <pre id="boot-status" style="color:#7C8896;padding:16px;font-family:monospace;font-size:12px;white-space:pre-wrap;">Chargement des scripts...</pre>
+</div>
+
+<script>
+  window.addEventListener('error', function (e) {
+    var el = document.getElementById('boot-status') || document.getElementById('root');
+    var msg = 'ERREUR: ' + (e.message || 'inconnue') + '\nFichier: ' + (e.filename || '?') + '\nLigne: ' + (e.lineno || '?');
+    el.style.color = '#FF5C5C';
+    el.textContent = msg;
+    console.error(e);
+  });
+</script>
+
+<script crossorigin="anonymous" src="https://unpkg.com/react@18.3.1/umd/react.production.min.js" onload="document.getElementById('boot-status').textContent='React chargé...'"></script>
+<script crossorigin="anonymous" src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js" onload="document.getElementById('boot-status').textContent='ReactDOM chargé...'"></script>
+<script crossorigin="anonymous" src="https://unpkg.com/@babel/standalone@7.25.6/babel.min.js" onload="document.getElementById('boot-status').textContent='Babel chargé, compilation en cours...'"></script>
+
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useRef } = React;
+
+const STATS = {
+  str: { label: "Force", emoji: "💪", color: "#FF6B5C" },
+  end: { label: "Vitalité", emoji: "❤️", color: "#4ADE80" },
+  disc: { label: "Discipline", emoji: "🛡️", color: "#5CC8FF" },
+  int: { label: "Mental", emoji: "🧠", color: "#C084FC" },
+};
+
+const DIFF = {
+  easy: { label: "Facile", mult: 1 },
+  medium: { label: "Moyen", mult: 1.5 },
+  hard: { label: "Difficile", mult: 2 },
+  epic: { label: "Épique", mult: 3 },
+};
+
+const BASE_XP = 10;
+const BASE_GOLD = 5;
+const STORAGE_KEY = "levelup-rpg-state-v1";
+
+const todayStr = () => new Date().toISOString().slice(0, 10);
+const uid = () => Math.random().toString(36).slice(2, 10);
+
+const CLASSES = {
+  str: { name: "Guerrier", emoji: "⚔️", color: "#FF6B5C", desc: "Force brute, puissance physique" },
+  end: { name: "Endurant", emoji: "🏃", color: "#4ADE80", desc: "Cardio, résistance, énergie" },
+  disc: { name: "Gardien", emoji: "🛡️", color: "#5CC8FF", desc: "Régularité, rigueur, habitudes" },
+  int: { name: "Sage", emoji: "🧠", color: "#C084FC", desc: "Concentration, clarté mentale" },
+};
+const RANKS = {
+  debutant: { name: "Novice", bonus: 3 },
+  intermediaire: { name: "Confirmé", bonus: 5 },
+  avance: { name: "Vétéran", bonus: 8 },
+  expert: { name: "Maître", bonus: 12 },
+};
+const TIME_TO_DIFF = { "15": "easy", "30": "medium", "45": "hard", "60": "epic" };
+
+const defaultState = () => ({
+  onboarded: false,
+  requirePhoto: false,
+  proofs: {},
+  character: { name: "Aventurier", level: 1, xp: 0, gold: 0, hp: 50, maxHp: 50, stats: { str: 0, end: 0, disc: 0, int: 0 }, className: "", rank: "" },
+  habits: [
+    { id: uid(), text: "Faire 20 pompes", stat: "str" },
+    { id: uid(), text: "Manger un fast-food", stat: "end", negative: true },
+  ],
+  dailies: [
+    { id: uid(), text: "Séance de sport", stat: "str", difficulty: "medium", done: false, streak: 0 },
+    { id: uid(), text: "10 min d'étirements", stat: "end", difficulty: "easy", done: false, streak: 0 },
+  ],
+  todos: [{ id: uid(), text: "Planifier le programme de la semaine", stat: "disc", difficulty: "easy", done: false }],
+  rewards: [
+    { id: uid(), text: "1h de jeu vidéo", cost: 40 },
+    { id: uid(), text: "Session VR", cost: 60 },
+  ],
+  lastLogin: todayStr(),
+});
+
+function xpToNext(level) { return 100 + (level - 1) * 40; }
+
+function loadState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (typeof parsed.onboarded === "undefined") parsed.onboarded = true; // pre-existing saves skip the quiz
+      return parsed;
+    }
+  } catch (e) {}
+  return defaultState();
+}
+function saveState(state) {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) {}
+}
+
+function SysPanel({ children, className = "", accent = "#45E0D1" }) {
+  return (
+    <div className={"relative " + className}>
+      <div style={{ position: "absolute", top: -1, left: -1, width: 12, height: 12, borderTop: "2px solid " + accent, borderLeft: "2px solid " + accent }} />
+      <div style={{ position: "absolute", top: -1, right: -1, width: 12, height: 12, borderTop: "2px solid " + accent, borderRight: "2px solid " + accent }} />
+      <div style={{ position: "absolute", bottom: -1, left: -1, width: 12, height: 12, borderBottom: "2px solid " + accent, borderLeft: "2px solid " + accent }} />
+      <div style={{ position: "absolute", bottom: -1, right: -1, width: 12, height: 12, borderBottom: "2px solid " + accent, borderRight: "2px solid " + accent }} />
+      <div style={{ border: "1px solid #233041", background: "#0F1621", padding: "12px 16px" }}>{children}</div>
+    </div>
+  );
+}
+
+function Bar({ value, max, color, height = 8 }) {
+  const pct = Math.max(0, Math.min(100, (value / max) * 100));
+  return (
+    <div style={{ width: "100%", background: "#1A2330", borderRadius: 2, overflow: "hidden", height }}>
+      <div style={{ height: "100%", width: pct + "%", background: color, boxShadow: "0 0 8px " + color + "99", transition: "width .5s" }} />
+    </div>
+  );
+}
+
+function StatChip({ statKey, value }) {
+  const s = STATS[statKey];
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 6, background: "#131C27", border: "1px solid #233041", borderRadius: 4, padding: "4px 8px" }}>
+      <span style={{ fontSize: 12 }}>{s.emoji}</span>
+      <span style={{ fontSize: 11, fontFamily: "monospace", color: s.color }}>{value}</span>
+    </div>
+  );
+}
+
+function DiffPicker({ value, onChange }) {
+  return (
+    <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+      {Object.entries(DIFF).map(([k, d]) => (
+        <button key={k} onClick={() => onChange(k)}
+          style={{ padding: "6px 8px", fontSize: 11, fontFamily: "monospace", borderRadius: 4,
+            border: "1px solid " + (value === k ? "#45E0D1" : "#233041"),
+            color: value === k ? "#45E0D1" : "#7C8896",
+            background: value === k ? "#45E0D122" : "transparent" }}>
+          {d.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function StatPicker({ value, onChange }) {
+  return (
+    <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+      {Object.entries(STATS).map(([k, s]) => (
+        <button key={k} onClick={() => onChange(k)}
+          style={{ padding: "6px 8px", display: "flex", alignItems: "center", gap: 4, fontSize: 11, fontFamily: "monospace", borderRadius: 4,
+            border: "1px solid " + (value === k ? s.color : "#233041"),
+            color: value === k ? s.color : "#7C8896",
+            background: value === k ? s.color + "22" : "transparent" }}>
+          <span>{s.emoji}</span>{s.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function GlowButton({ children, onClick, active, accent = "#45E0D1", style = {}, full = false }) {
+  return (
+    <button
+      onClick={onClick}
+      className="font-hud"
+      style={{
+        width: full ? "100%" : "auto",
+        padding: "12px 16px",
+        borderRadius: 8,
+        border: "1px solid " + (active ? accent : "#233041"),
+        background: active ? accent + "1F" : "#0F1621",
+        color: active ? accent : "#B9C2CC",
+        fontWeight: 600,
+        fontSize: 14,
+        boxShadow: active ? "0 0 14px " + accent + "55" : "none",
+        transition: "all .15s",
+        ...style,
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function OptionCard({ emoji, title, desc, active, accent, onClick, delay = 0 }) {
+  return (
+    <button onClick={onClick} style={{ width: "100%", textAlign: "left", background: "none", border: "none", padding: 0, marginBottom: 10, opacity: 0, animation: "slideUp .45s ease forwards", animationDelay: delay + "s" }}>
+      <SysPanel accent={active ? accent : "#233041"} className="">
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{ fontSize: 24, width: 36, textAlign: "center" }}>{emoji}</div>
+          <div style={{ flex: 1 }}>
+            <div className="font-hud" style={{ fontWeight: 600, fontSize: 14, color: active ? accent : "#E7ECEF" }}>{title}</div>
+            {desc && <div style={{ fontSize: 11, color: "#7C8896", marginTop: 2 }}>{desc}</div>}
+          </div>
+          <div style={{ width: 18, height: 18, borderRadius: "50%", border: "2px solid " + (active ? accent : "#3A4657"), background: active ? accent : "transparent", flexShrink: 0 }} />
+        </div>
+      </SysPanel>
+    </button>
+  );
+}
+
+function Onboarding({ onComplete }) {
+  const [step, setStep] = useState(0);
+  const [name, setName] = useState("");
+  const [goal, setGoal] = useState(null);
+  const [rank, setRank] = useState(null);
+  const [time, setTime] = useState(null);
+  const [style, setStyleP] = useState(null);
+  const [revealing, setRevealing] = useState(false);
+
+  const steps = ["nom", "objectif", "niveau", "temps", "style"];
+  const canNext =
+    (step === 0 && name.trim().length > 0) ||
+    (step === 1 && goal) ||
+    (step === 2 && rank) ||
+    (step === 3 && time) ||
+    (step === 4 && style);
+
+  function next() {
+    if (step < steps.length - 1) setStep(step + 1);
+    else { setRevealing(true); setTimeout(() => finish(), 2200); }
+  }
+
+  function finish() {
+    const cls = CLASSES[goal];
+    const rk = RANKS[rank];
+    const diff = TIME_TO_DIFF[time];
+    const styleLabels = { poids: "Poids du corps", muscu: "Musculation", cardio: "Cardio", mix: "Mixte" };
+    onComplete({
+      name: name.trim() || "Aventurier",
+      goal, rank, time, style,
+      className: cls.name,
+      rankName: rk.name,
+      bonus: rk.bonus,
+      dailyText: (goal === "str" ? "Séance " + (styleLabels[style] || "musculation") : goal === "end" ? "Séance cardio" : goal === "disc" ? "Routine du soir" : "Session focus / lecture"),
+      dailyDiff: diff,
+    });
+  }
+
+  if (revealing) {
+    const cls = CLASSES[goal];
+    return (
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", padding: 24, textAlign: "center" }}>
+        <div className="font-hud" style={{ color: "#7C8896", fontSize: 12, letterSpacing: 2, marginBottom: 16 }}>ÉVEIL DU SYSTÈME EN COURS...</div>
+        <div style={{ fontSize: 56, marginBottom: 12, animation: "pulse 1.2s infinite" }}>{cls.emoji}</div>
+        <div className="font-hud" style={{ fontSize: 22, fontWeight: 700, color: cls.color, textShadow: "0 0 20px " + cls.color }}>
+          CLASSE : {cls.name.toUpperCase()}
+        </div>
+        <style>{"@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.6;transform:scale(1.08)}}"}</style>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ minHeight: "100vh", padding: "24px 20px 40px", display: "flex", flexDirection: "column" }}>
+      <div style={{ display: "flex", gap: 4, marginBottom: 24 }}>
+        {steps.map((s, i) => (
+          <div key={s} style={{ flex: 1, height: 3, borderRadius: 2, background: i <= step ? "#45E0D1" : "#1A2330" }} />
+        ))}
+      </div>
+
+      {step === 0 && (
+        <div>
+          <div className="font-hud" style={{ fontSize: 11, color: "#45E0D1", letterSpacing: 1, marginBottom: 6 }}>ÉTAPE 1/5</div>
+          <h1 className="font-hud" style={{ fontSize: 20, fontWeight: 700, marginBottom: 8 }}>Comment le Système doit-il t'appeler ?</h1>
+          <p style={{ fontSize: 12, color: "#7C8896", marginBottom: 20 }}>Ton nom de joueur, modifiable plus tard.</p>
+          <input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Ton nom..."
+            style={{ width: "100%", background: "#131C27", border: "1px solid #233041", borderRadius: 8, padding: "12px 14px", fontSize: 15, outline: "none", color: "#E7ECEF" }} />
+        </div>
+      )}
+
+      {step === 1 && (
+        <div>
+          <div className="font-hud" style={{ fontSize: 11, color: "#45E0D1", letterSpacing: 1, marginBottom: 6 }}>ÉTAPE 2/5</div>
+          <h1 className="font-hud" style={{ fontSize: 20, fontWeight: 700, marginBottom: 8 }}>Quel est ton objectif principal ?</h1>
+          <p style={{ fontSize: 12, color: "#7C8896", marginBottom: 20 }}>Ça détermine ta classe de départ.</p>
+          {Object.entries(CLASSES).map(([k, c], i) => (
+            <OptionCard key={k} emoji={c.emoji} title={c.name} desc={c.desc} active={goal === k} accent={c.color} onClick={() => setGoal(k)} delay={i * 0.07} />
+          ))}
+        </div>
+      )}
+
+      {step === 2 && (
+        <div>
+          <div className="font-hud" style={{ fontSize: 11, color: "#45E0D1", letterSpacing: 1, marginBottom: 6 }}>ÉTAPE 3/5</div>
+          <h1 className="font-hud" style={{ fontSize: 20, fontWeight: 700, marginBottom: 8 }}>Ton niveau actuel ?</h1>
+          <p style={{ fontSize: 12, color: "#7C8896", marginBottom: 20 }}>Détermine ton rang de départ et ton bonus de stats.</p>
+          {Object.entries(RANKS).map(([k, r], i) => (
+            <OptionCard key={k} emoji="🎖️" title={r.name} desc={"Bonus de départ : +" + r.bonus} active={rank === k} accent="#E8B44A" onClick={() => setRank(k)} delay={i * 0.07} />
+          ))}
+        </div>
+      )}
+
+      {step === 3 && (
+        <div>
+          <div className="font-hud" style={{ fontSize: 11, color: "#45E0D1", letterSpacing: 1, marginBottom: 6 }}>ÉTAPE 4/5</div>
+          <h1 className="font-hud" style={{ fontSize: 20, fontWeight: 700, marginBottom: 8 }}>Temps disponible par jour ?</h1>
+          <p style={{ fontSize: 12, color: "#7C8896", marginBottom: 20 }}>Pour calibrer la difficulté de tes quêtes.</p>
+          <OptionCard emoji="⏱️" title="15 minutes" desc="Sessions courtes et efficaces" active={time === "15"} accent="#5CC8FF" onClick={() => setTime("15")} delay={0} />
+          <OptionCard emoji="⏱️" title="30 minutes" desc="Rythme régulier" active={time === "30"} accent="#5CC8FF" onClick={() => setTime("30")} delay={0.07} />
+          <OptionCard emoji="⏱️" title="45–60 minutes" desc="Séances complètes" active={time === "45"} accent="#5CC8FF" onClick={() => setTime("45")} delay={0.14} />
+          <OptionCard emoji="⏱️" title="1h ou plus" desc="Engagement maximal" active={time === "60"} accent="#5CC8FF" onClick={() => setTime("60")} delay={0.21} />
+        </div>
+      )}
+
+      {step === 4 && (
+        <div>
+          <div className="font-hud" style={{ fontSize: 11, color: "#45E0D1", letterSpacing: 1, marginBottom: 6 }}>ÉTAPE 5/5</div>
+          <h1 className="font-hud" style={{ fontSize: 20, fontWeight: 700, marginBottom: 8 }}>Style d'entraînement préféré ?</h1>
+          <p style={{ fontSize: 12, color: "#7C8896", marginBottom: 20 }}>On adapte ta première quête quotidienne.</p>
+          <OptionCard emoji="🤸" title="Poids du corps" active={style === "poids"} accent="#C084FC" onClick={() => setStyleP("poids")} delay={0} />
+          <OptionCard emoji="🏋️" title="Musculation" active={style === "muscu"} accent="#C084FC" onClick={() => setStyleP("muscu")} delay={0.07} />
+          <OptionCard emoji="🏃" title="Cardio" active={style === "cardio"} accent="#C084FC" onClick={() => setStyleP("cardio")} delay={0.14} />
+          <OptionCard emoji="🔀" title="Mixte" active={style === "mix"} accent="#C084FC" onClick={() => setStyleP("mix")} delay={0.21} />
+        </div>
+      )}
+
+      <div style={{ flex: 1 }} />
+      <div style={{ display: "flex", gap: 10, marginTop: 24 }}>
+        {step > 0 && (
+          <GlowButton onClick={() => setStep(step - 1)} accent="#7C8896">← Retour</GlowButton>
+        )}
+        <div style={{ flex: 1 }}>
+          <GlowButton onClick={next} active={canNext} accent="#45E0D1" full style={{ opacity: canNext ? 1 : 0.4, pointerEvents: canNext ? "auto" : "none" }}>
+            {step === steps.length - 1 ? "Activer le Système" : "Suivant →"}
+          </GlowButton>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function App() {
+  const [state, setState] = useState(null);
+  const [tab, setTab] = useState("dailies");
+  const [toast, setToast] = useState(null);
+  const [levelUpFx, setLevelUpFx] = useState(false);
+  const [addingFor, setAddingFor] = useState(null);
+  const [musicOn, setMusicOn] = useState(false);
+  const toastTimer = useRef(null);
+  const audioRef = useRef({ ctx: null, nodes: [] });
+  const fileInputRef = useRef(null);
+  const pendingActionRef = useRef(null);
+
+  function startAmbient() {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const master = ctx.createGain(); master.gain.value = 0.0001;
+      master.connect(ctx.destination);
+      master.gain.linearRampToValueAtTime(0.06, ctx.currentTime + 2);
+
+      const filter = ctx.createBiquadFilter();
+      filter.type = "lowpass"; filter.frequency.value = 260; filter.Q.value = 0.7;
+      filter.connect(master);
+
+      const osc1 = ctx.createOscillator(); osc1.type = "sine"; osc1.frequency.value = 55;
+      const osc2 = ctx.createOscillator(); osc2.type = "sine"; osc2.frequency.value = 58.5;
+      const osc3 = ctx.createOscillator(); osc3.type = "triangle"; osc3.frequency.value = 110.5;
+      const oscGain = ctx.createGain(); oscGain.gain.value = 0.5;
+      osc1.connect(oscGain); osc2.connect(oscGain); osc3.connect(oscGain);
+      oscGain.connect(filter);
+
+      const lfo = ctx.createOscillator(); lfo.type = "sine"; lfo.frequency.value = 0.06;
+      const lfoGain = ctx.createGain(); lfoGain.gain.value = 90;
+      lfo.connect(lfoGain); lfoGain.connect(filter.frequency);
+
+      const bufSize = ctx.sampleRate * 2;
+      const buf = ctx.createBuffer(1, bufSize, ctx.sampleRate);
+      const data = buf.getChannelData(0);
+      for (let i = 0; i < bufSize; i++) data[i] = (Math.random() * 2 - 1) * 0.35;
+      const noise = ctx.createBufferSource(); noise.buffer = buf; noise.loop = true;
+      const noiseFilter = ctx.createBiquadFilter(); noiseFilter.type = "bandpass"; noiseFilter.frequency.value = 180; noiseFilter.Q.value = 0.8;
+      const noiseGain = ctx.createGain(); noiseGain.gain.value = 0.15;
+      noise.connect(noiseFilter); noiseFilter.connect(noiseGain); noiseGain.connect(filter);
+
+      [osc1, osc2, osc3, lfo, noise].forEach((n) => n.start());
+      audioRef.current = { ctx, nodes: [osc1, osc2, osc3, lfo, noise], master };
+    } catch (e) {}
+  }
+
+  function stopAmbient() {
+    const { ctx, nodes, master } = audioRef.current;
+    if (!ctx) return;
+    try {
+      if (master) master.gain.linearRampToValueAtTime(0.0001, ctx.currentTime + 0.8);
+      setTimeout(() => {
+        nodes.forEach((n) => { try { n.stop(); } catch (e) {} });
+        ctx.close();
+      }, 900);
+    } catch (e) {}
+    audioRef.current = { ctx: null, nodes: [] };
+  }
+
+  function toggleMusic() {
+    setMusicOn((prev) => {
+      if (!prev) startAmbient(); else stopAmbient();
+      return !prev;
+    });
+  }
+
+  useEffect(() => () => stopAmbient(), []);
+
+  useEffect(() => {
+    let loaded = loadState();
+    const today = todayStr();
+    if (loaded.lastLogin !== today) {
+      let hp = loaded.character.hp;
+      loaded.dailies = loaded.dailies.map((d) => {
+        if (!d.done) { hp -= Math.round(3 * DIFF[d.difficulty].mult); return { ...d, done: false, streak: 0 }; }
+        return { ...d, done: false, streak: (d.streak || 0) + 1 };
+      });
+      loaded.character.hp = Math.max(0, hp);
+      loaded.lastLogin = today;
+    }
+    setState(loaded);
+  }, []);
+
+  useEffect(() => { if (state) saveState(state); }, [state]);
+
+  function showToast(msg, color = "#45E0D1") {
+    setToast({ msg, color });
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 2200);
+  }
+
+  function applyReward(statKey, mult = 1) {
+    setState((prev) => {
+      const c = { ...prev.character, stats: { ...prev.character.stats } };
+      const gainedXp = Math.round(BASE_XP * mult);
+      const gainedGold = Math.round(BASE_GOLD * mult);
+      c.xp += gainedXp; c.gold += gainedGold;
+      if (statKey) c.stats[statKey] = (c.stats[statKey] || 0) + Math.max(1, Math.round(mult));
+      let leveled = false, need = xpToNext(c.level);
+      while (c.xp >= need) { c.xp -= need; c.level += 1; c.maxHp += 5; c.hp = c.maxHp; leveled = true; need = xpToNext(c.level); }
+      if (leveled) { setLevelUpFx(true); setTimeout(() => setLevelUpFx(false), 1800); showToast("NIVEAU " + c.level + " ATTEINT", "#E8B44A"); }
+      else { showToast("+" + gainedXp + " XP  +" + gainedGold + " or", "#45E0D1"); }
+      return { ...prev, character: c };
+    });
+  }
+  function applyPenalty(mult = 1) {
+    setState((prev) => {
+      const c = { ...prev.character };
+      const dmg = Math.round(4 * mult);
+      c.hp = Math.max(0, c.hp - dmg);
+      showToast("-" + dmg + " PV", "#FF5C5C");
+      return { ...prev, character: c };
+    });
+  }
+  function reallyToggleDaily(id) {
+    const d = state.dailies.find((x) => x.id === id);
+    if (!d) return;
+    setState((prev) => ({ ...prev, dailies: prev.dailies.map((x) => (x.id === id ? { ...x, done: !x.done } : x)) }));
+    if (!d.done) applyReward(d.stat, DIFF[d.difficulty].mult);
+  }
+  function reallyCompleteTodo(id) {
+    const t = state.todos.find((x) => x.id === id);
+    if (!t) return;
+    applyReward(t.stat, DIFF[t.difficulty].mult);
+    setState((prev) => ({ ...prev, todos: prev.todos.filter((x) => x.id !== id) }));
+  }
+  function requestToggleDaily(id) {
+    const d = state.dailies.find((x) => x.id === id);
+    if (!d) return;
+    if (!d.done && state.requirePhoto) {
+      pendingActionRef.current = { type: "daily", id };
+      fileInputRef.current && fileInputRef.current.click();
+    } else {
+      reallyToggleDaily(id);
+    }
+  }
+  function requestCompleteTodo(id) {
+    if (state.requirePhoto) {
+      pendingActionRef.current = { type: "todo", id };
+      fileInputRef.current && fileInputRef.current.click();
+    } else {
+      reallyCompleteTodo(id);
+    }
+  }
+  function handlePhotoSelected(e) {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = "";
+    const action = pendingActionRef.current;
+    pendingActionRef.current = null;
+    if (!file || !action) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const img = new window.Image();
+      img.onload = () => {
+        const maxW = 220;
+        const scale = Math.min(1, maxW / img.width);
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(img.width * scale));
+        canvas.height = Math.max(1, Math.round(img.height * scale));
+        const cctx = canvas.getContext("2d");
+        cctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        const dataUrl = canvas.toDataURL("image/jpeg", 0.5);
+        setState((prev) => ({ ...prev, proofs: { ...(prev.proofs || {}), [action.id]: { ts: Date.now(), img: dataUrl } } }));
+        if (action.type === "daily") reallyToggleDaily(action.id); else reallyCompleteTodo(action.id);
+        showToast("Preuve enregistrée", "#4ADE80");
+      };
+      img.src = ev.target.result;
+    };
+    reader.readAsDataURL(file);
+  }
+  function hitHabit(h) { h.negative ? applyPenalty(1) : applyReward(h.stat, 1); }
+  function buyReward(r) {
+    if (state.character.gold < r.cost) { showToast("Pas assez d'or", "#FF5C5C"); return; }
+    setState((prev) => ({ ...prev, character: { ...prev.character, gold: prev.character.gold - r.cost } }));
+    showToast("Récompense débloquée", "#E8B44A");
+  }
+  function addItem(kind, payload) {
+    setState((prev) => {
+      const item = { id: uid(), ...payload };
+      if (kind === "habit") return { ...prev, habits: [...prev.habits, item] };
+      if (kind === "daily") return { ...prev, dailies: [...prev.dailies, { ...item, done: false, streak: 0 }] };
+      if (kind === "todo") return { ...prev, todos: [...prev.todos, { ...item, done: false }] };
+      if (kind === "reward") return { ...prev, rewards: [...prev.rewards, item] };
+      return prev;
+    });
+    setAddingFor(null);
+  }
+  function removeItem(kind, id) { setState((prev) => ({ ...prev, [kind]: prev[kind].filter((x) => x.id !== id) })); }
+
+  function handleOnboardingComplete(answers) {
+    setState((prev) => {
+      const next = { ...prev, onboarded: true };
+      next.character = {
+        ...prev.character,
+        name: answers.name,
+        className: answers.className,
+        rank: answers.rankName,
+        stats: { ...prev.character.stats, [answers.goal]: (prev.character.stats[answers.goal] || 0) + answers.bonus },
+      };
+      next.dailies = [
+        { id: uid(), text: answers.dailyText, stat: answers.goal, difficulty: answers.dailyDiff, done: false, streak: 0 },
+        ...prev.dailies,
+      ];
+      return next;
+    });
+  }
+
+  if (!state) return <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}><div style={{ color: "#45E0D1", fontFamily: "monospace" }}>Chargement...</div></div>;
+
+  if (!state.onboarded) return <Onboarding onComplete={handleOnboardingComplete} />;
+
+  const c = state.character;
+  const need = xpToNext(c.level);
+
+  return (
+    <div style={{ minHeight: "100vh", paddingBottom: 96 }}>
+      {levelUpFx && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,.4)", pointerEvents: "none" }}>
+          <div className="font-hud" style={{ fontSize: 36, fontWeight: 700, color: "#E8B44A", textShadow: "0 0 20px #E8B44A" }}>LEVEL UP</div>
+        </div>
+      )}
+      {toast && (
+        <div className="font-hud" style={{ position: "fixed", top: 12, left: "50%", transform: "translateX(-50%)", zIndex: 50, fontSize: 12, padding: "6px 12px", borderRadius: 4, border: "1px solid " + toast.color, color: toast.color, background: "#0A0E14ee" }}>{toast.msg}</div>
+      )}
+
+      <div style={{ position: "sticky", top: 0, zIndex: 40, background: "rgba(10,14,20,.95)", backdropFilter: "blur(4px)", borderBottom: "1px solid #1A2330", padding: "16px 16px 12px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <div className="font-hud" style={{ width: 48, height: 48, borderRadius: "50%", border: "2px solid #45E0D1", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: "#45E0D1", fontSize: 18, boxShadow: "0 0 10px #45E0D155", flexShrink: 0 }}>{c.level}</div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <input value={c.name} onChange={(e) => setState((p) => ({ ...p, character: { ...p.character, name: e.target.value } }))}
+              className="font-hud" style={{ background: "transparent", border: "none", outline: "none", fontWeight: 600, fontSize: 14, width: "100%", color: "#E7ECEF" }} />
+            {c.className && (
+              <div className="font-hud" style={{ fontSize: 10, color: "#E8B44A", marginTop: -2 }}>{c.rank} {c.className}</div>
+            )}
+            <div style={{ display: "flex", alignItems: "center", gap: 4, margin: "4px 0" }}>
+              <span style={{ fontSize: 10, fontFamily: "monospace", color: "#7C8896" }}>{c.xp}/{need} XP</span>
+            </div>
+            <Bar value={c.xp} max={need} color="#45E0D1" height={6} />
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+            <button onClick={toggleMusic} style={{ background: "none", border: "1px solid " + (musicOn ? "#45E0D1" : "#233041"), borderRadius: 6, width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13 }}>
+              {musicOn ? "🔊" : "🔇"}
+            </button>
+            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+              <span style={{ fontSize: 12 }}>🪙</span>
+              <span style={{ fontFamily: "monospace", fontSize: 12, color: "#E8B44A" }}>{c.gold}</span>
+            </div>
+          </div>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
+          <span style={{ fontSize: 12 }}>❤️</span>
+          <Bar value={c.hp} max={c.maxHp} color="#FF5C5C" height={6} />
+          <span style={{ fontSize: 10, fontFamily: "monospace", color: "#7C8896", flexShrink: 0 }}>{c.hp}/{c.maxHp}</span>
+        </div>
+        <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
+          {Object.keys(STATS).map((k) => <StatChip key={k} statKey={k} value={c.stats[k] || 0} />)}
+        </div>
+      </div>
+
+      <div style={{ padding: "16px 16px 0" }}>
+        {tab === "dailies" && (
+          <Section title="Quotidiennes" emoji="🔁" onAdd={() => setAddingFor("daily")}>
+            {state.dailies.map((d) => (
+              <SysPanel key={d.id} className="mb2">
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <button onClick={() => requestToggleDaily(d.id)} style={{ width: 24, height: 24, borderRadius: 4, border: "1px solid " + (d.done ? "#4ADE80" : "#233041"), background: d.done ? "#4ADE8033" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                    {d.done && <span style={{ color: "#4ADE80" }}>✓</span>}
+                  </button>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 14, textDecoration: d.done ? "line-through" : "none", color: d.done ? "#7C8896" : "#E7ECEF" }}>{d.text}</div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 2 }}>
+                      <span style={{ fontSize: 10, fontFamily: "monospace", color: STATS[d.stat].color }}>{STATS[d.stat].label} · {DIFF[d.difficulty].label}</span>
+                      {d.streak > 0 && <span style={{ fontSize: 10, fontFamily: "monospace", color: "#E8B44A" }}>🔥{d.streak}</span>}
+                    </div>
+                  </div>
+                  {state.proofs && state.proofs[d.id] && (
+                    <img src={state.proofs[d.id].img} alt="preuve" style={{ width: 28, height: 28, borderRadius: 4, objectFit: "cover", border: "1px solid #233041", flexShrink: 0 }} />
+                  )}
+                  <button onClick={() => removeItem("dailies", d.id)} style={{ background: "none", border: "none", color: "#3A4657", flexShrink: 0 }}>🗑</button>
+                </div>
+              </SysPanel>
+            ))}
+            {state.dailies.length === 0 && <Empty text="Aucune quotidienne. Ajoute une routine à répéter chaque jour." />}
+          </Section>
+        )}
+        {tab === "habits" && (
+          <Section title="Habitudes" emoji="⚔️" onAdd={() => setAddingFor("habit")}>
+            {state.habits.map((h) => (
+              <SysPanel key={h.id} accent={h.negative ? "#FF5C5C" : "#4ADE80"}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <button onClick={() => hitHabit(h)} style={{ width: 32, height: 32, borderRadius: "50%", border: "1px solid " + (h.negative ? "#FF5C5C" : "#4ADE80"), color: h.negative ? "#FF5C5C" : "#4ADE80", background: "none", flexShrink: 0 }}>{h.negative ? "−" : "+"}</button>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 14 }}>{h.text}</div>
+                    <span style={{ fontSize: 10, fontFamily: "monospace", color: STATS[h.stat].color }}>{STATS[h.stat].label}</span>
+                  </div>
+                  <button onClick={() => removeItem("habits", h.id)} style={{ background: "none", border: "none", color: "#3A4657", flexShrink: 0 }}>🗑</button>
+                </div>
+              </SysPanel>
+            ))}
+            {state.habits.length === 0 && <Empty text="Aucune habitude. Ajoute un réflexe à encourager ou éviter." />}
+          </Section>
+        )}
+        {tab === "todos" && (
+          <Section title="Quêtes" emoji="📋" onAdd={() => setAddingFor("todo")}>
+            {state.todos.map((t) => (
+              <SysPanel key={t.id}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <button onClick={() => requestCompleteTodo(t.id)} style={{ width: 24, height: 24, borderRadius: 4, border: "1px solid #233041", background: "none", flexShrink: 0, color: "#3A4657" }}>✓</button>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 14 }}>{t.text}</div>
+                    <span style={{ fontSize: 10, fontFamily: "monospace", color: STATS[t.stat].color }}>{STATS[t.stat].label} · {DIFF[t.difficulty].label}</span>
+                  </div>
+                  <button onClick={() => removeItem("todos", t.id)} style={{ background: "none", border: "none", color: "#3A4657", flexShrink: 0 }}>🗑</button>
+                </div>
+              </SysPanel>
+            ))}
+            {state.todos.length === 0 && <Empty text="Aucune quête en attente. Ajoute une tâche ponctuelle." />}
+          </Section>
+        )}
+        {tab === "rewards" && (
+          <Section title="Récompenses" emoji="🎁" onAdd={() => setAddingFor("reward")}>
+            {state.rewards.map((r) => (
+              <SysPanel key={r.id} accent="#E8B44A">
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <div style={{ flex: 1, minWidth: 0, fontSize: 14 }}>{r.text}</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 4, fontFamily: "monospace", fontSize: 12, color: "#E8B44A", flexShrink: 0 }}>🪙{r.cost}</div>
+                  <button onClick={() => buyReward(r)} className="font-hud" style={{ fontSize: 10, fontWeight: 600, border: "1px solid #E8B44A", color: "#E8B44A", background: "none", borderRadius: 4, padding: "4px 8px", flexShrink: 0 }}>Échanger</button>
+                  <button onClick={() => removeItem("rewards", r.id)} style={{ background: "none", border: "none", color: "#3A4657", flexShrink: 0 }}>🗑</button>
+                </div>
+              </SysPanel>
+            ))}
+            {state.rewards.length === 0 && <Empty text="Aucune récompense définie. Ajoute un plaisir à débloquer avec ton or." />}
+          </Section>
+        )}
+        {tab === "perso" && (
+          <Section title="Personnage" emoji="🧑">
+            {c.className && (
+              <SysPanel accent="#E8B44A" className="mb2">
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <span style={{ fontSize: 22 }}>{(CLASSES[Object.keys(CLASSES).find((k) => CLASSES[k].name === c.className)] || {}).emoji || "🎖️"}</span>
+                  <div>
+                    <div className="font-hud" style={{ fontWeight: 700, color: "#E8B44A", fontSize: 14 }}>{c.rank} {c.className}</div>
+                    <div style={{ fontSize: 11, color: "#7C8896" }}>Classe déterminée lors de l'éveil</div>
+                  </div>
+                </div>
+              </SysPanel>
+            )}
+            <SysPanel>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                {Object.entries(STATS).map(([k, s]) => (
+                  <div key={k} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontSize: 18 }}>{s.emoji}</span>
+                    <div>
+                      <div style={{ fontSize: 10, fontFamily: "monospace", color: "#7C8896" }}>{s.label}</div>
+                      <div className="font-hud" style={{ fontWeight: 700, color: s.color }}>{c.stats[k] || 0}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </SysPanel>
+            <div style={{ marginTop: 12 }}>
+              <GlowButton
+                accent="#FF5C5C"
+                full
+                active={!!state.requirePhoto}
+                onClick={() => setState((prev) => ({ ...prev, requirePhoto: !prev.requirePhoto }))}
+              >
+                {state.requirePhoto ? "📷 Preuve photo : activée" : "📷 Activer la preuve photo"}
+              </GlowButton>
+              <div style={{ fontSize: 10, color: "#7C8896", marginTop: 6, lineHeight: 1.5 }}>
+                Ouvre la caméra à chaque quête validée et garde une photo horodatée en preuve. Ce n'est pas une IA qui vérifie le mouvement — juste de quoi te rendre des comptes à toi-même.
+              </div>
+            </div>
+            <div style={{ marginTop: 10 }}>
+              <GlowButton
+                accent="#7C8896"
+                full
+                onClick={() => {
+                  if (window.confirm("Refaire le quiz d'éveil ? Ta progression actuelle reste intacte, seule ta classe sera redéfinie.")) {
+                    setState((prev) => ({ ...prev, onboarded: false }));
+                  }
+                }}
+              >
+                🔄 Refaire le quiz d'éveil
+              </GlowButton>
+            </div>
+          </Section>
+        )}
+      </div>
+
+      {addingFor && <AddModal kind={addingFor} onClose={() => setAddingFor(null)} onSubmit={(p) => addItem(addingFor, p)} />}
+
+      <input ref={fileInputRef} type="file" accept="image/*" capture="environment" style={{ display: "none" }} onChange={handlePhotoSelected} />
+
+      <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, background: "rgba(10,14,20,.95)", backdropFilter: "blur(4px)", borderTop: "1px solid #1A2330", display: "flex", zIndex: 40 }}>
+        {[
+          { id: "dailies", emoji: "🔁", label: "Quotid." },
+          { id: "habits", emoji: "⚔️", label: "Habitudes" },
+          { id: "todos", emoji: "📋", label: "Quêtes" },
+          { id: "rewards", emoji: "🎁", label: "Récomp." },
+          { id: "perso", emoji: "🧑", label: "Perso" },
+        ].map((t) => (
+          <button key={t.id} onClick={() => setTab(t.id)} className="font-hud" style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 2, padding: "10px 0", background: "none", border: "none", color: tab === t.id ? "#45E0D1" : "#4A5568" }}>
+            <span style={{ fontSize: 16 }}>{t.emoji}</span>
+            <span style={{ fontSize: 9 }}>{t.label}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function Section({ title, emoji, children, onAdd }) {
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+        <div className="font-hud" style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 600, fontSize: 14, textTransform: "uppercase", letterSpacing: .5 }}>
+          <span>{emoji}</span>{title}
+        </div>
+        {onAdd && <button onClick={onAdd} style={{ width: 28, height: 28, borderRadius: 4, border: "1px solid #45E0D1", color: "#45E0D1", background: "none" }}>+</button>}
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{children}</div>
+    </div>
+  );
+}
+function Empty({ text }) { return <div style={{ fontSize: 12, color: "#4A5568", fontFamily: "monospace", padding: "24px 0", textAlign: "center" }}>{text}</div>; }
+
+function AddModal({ kind, onClose, onSubmit }) {
+  const [text, setText] = useState("");
+  const [stat, setStat] = useState("str");
+  const [difficulty, setDifficulty] = useState("medium");
+  const [negative, setNegative] = useState(false);
+  const [cost, setCost] = useState(30);
+  const titles = { habit: "Nouvelle habitude", daily: "Nouvelle quotidienne", todo: "Nouvelle quête", reward: "Nouvelle récompense" };
+
+  function submit() {
+    if (!text.trim()) return;
+    if (kind === "reward") onSubmit({ text: text.trim(), cost: Math.max(1, Number(cost) || 1) });
+    else if (kind === "habit") onSubmit({ text: text.trim(), stat, negative });
+    else onSubmit({ text: text.trim(), stat, difficulty });
+  }
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 50, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 480, background: "#0F1621", borderTop: "1px solid #233041", borderLeft: "1px solid #233041", borderRight: "1px solid #233041", borderRadius: "8px 8px 0 0", padding: "16px 16px 24px" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+          <div className="font-hud" style={{ fontWeight: 600, fontSize: 14 }}>{titles[kind]}</div>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: "#7C8896", fontSize: 18 }}>✕</button>
+        </div>
+        <input autoFocus value={text} onChange={(e) => setText(e.target.value)} placeholder="Texte..."
+          style={{ width: "100%", background: "#131C27", border: "1px solid #233041", borderRadius: 4, padding: "8px 12px", fontSize: 14, outline: "none", color: "#E7ECEF", marginBottom: 12 }} />
+        {kind === "reward" ? (
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 11, fontFamily: "monospace", color: "#7C8896", marginBottom: 4 }}>Coût en or</div>
+            <input type="number" value={cost} onChange={(e) => setCost(e.target.value)}
+              style={{ width: "100%", background: "#131C27", border: "1px solid #233041", borderRadius: 4, padding: "8px 12px", fontSize: 14, outline: "none", color: "#E7ECEF" }} />
+          </div>
+        ) : (
+          <React.Fragment>
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 11, fontFamily: "monospace", color: "#7C8896", marginBottom: 4 }}>Statistique liée</div>
+              <StatPicker value={stat} onChange={setStat} />
+            </div>
+            {kind === "habit" ? (
+              <div style={{ marginBottom: 12, display: "flex", gap: 8 }}>
+                <button onClick={() => setNegative(false)} className="font-hud" style={{ flex: 1, padding: "8px 0", borderRadius: 4, fontSize: 12, border: "1px solid " + (!negative ? "#4ADE80" : "#233041"), color: !negative ? "#4ADE80" : "#7C8896", background: "none" }}>Bonne habitude (+)</button>
+                <button onClick={() => setNegative(true)} className="font-hud" style={{ flex: 1, padding: "8px 0", borderRadius: 4, fontSize: 12, border: "1px solid " + (negative ? "#FF5C5C" : "#233041"), color: negative ? "#FF5C5C" : "#7C8896", background: "none" }}>Mauvaise habitude (-)</button>
+              </div>
+            ) : (
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 11, fontFamily: "monospace", color: "#7C8896", marginBottom: 4 }}>Difficulté</div>
+                <DiffPicker value={difficulty} onChange={setDifficulty} />
+              </div>
+            )}
+          </React.Fragment>
+        )}
+        <button onClick={submit} className="font-hud" style={{ width: "100%", background: "#45E0D1", color: "#0A0E14", fontWeight: 600, fontSize: 14, border: "none", borderRadius: 4, padding: "10px 0", marginTop: 4 }}>Ajouter</button>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  });
+}
+</script>
+</body>
+</html>
