@@ -1,0 +1,1673 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+<title>Level Up</title>
+<link rel="manifest" href="manifest.json" />
+<meta name="theme-color" content="#0A0E14" />
+<link rel="icon" href="icon-192.png" />
+<link rel="apple-touch-icon" href="icon-192.png" />
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Inter:wght@400;500;600&display=swap');
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body { margin: 0; background: #0A0E14; color: #E7ECEF; font-family: 'Inter', system-ui, sans-serif; }
+  .font-hud { font-family: 'Chakra Petch', sans-serif; }
+  input, button { font-family: inherit; }
+  @keyframes slideUp { from { opacity: 0; transform: translateY(28px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes fadeScale { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: scale(1); } }
+</style>
+</head>
+<body>
+<div id="root">
+  <pre id="boot-status" style="color:#7C8896;padding:16px;font-family:monospace;font-size:12px;white-space:pre-wrap;">Chargement des scripts...</pre>
+</div>
+
+<script>
+  window.addEventListener('error', function (e) {
+    var el = document.getElementById('boot-status') || document.getElementById('root');
+    var msg = 'ERREUR: ' + (e.message || 'inconnue') + '\nFichier: ' + (e.filename || '?') + '\nLigne: ' + (e.lineno || '?');
+    el.style.color = '#FF5C5C';
+    el.textContent = msg;
+    console.error(e);
+  });
+</script>
+
+<script crossorigin="anonymous" src="https://unpkg.com/react@18.3.1/umd/react.production.min.js" onload="document.getElementById('boot-status').textContent='React chargé...'"></script>
+<script crossorigin="anonymous" src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js" onload="document.getElementById('boot-status').textContent='ReactDOM chargé...'"></script>
+<script crossorigin="anonymous" src="https://unpkg.com/@babel/standalone@7.25.6/babel.min.js" onload="document.getElementById('boot-status').textContent='Babel chargé, compilation en cours...'"></script>
+
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useRef } = React;
+
+const STATS = {
+  str: { label: "Force", emoji: "💪", color: "#FF6B5C" },
+  end: { label: "Vitalité", emoji: "❤️", color: "#4ADE80" },
+  disc: { label: "Discipline", emoji: "🛡️", color: "#5CC8FF" },
+  int: { label: "Mental", emoji: "🧠", color: "#C084FC" },
+};
+
+const DIFF = {
+  easy: { label: "Facile", mult: 1 },
+  medium: { label: "Moyen", mult: 1.5 },
+  hard: { label: "Difficile", mult: 2 },
+  epic: { label: "Épique", mult: 3 },
+};
+
+const BASE_XP = 10;
+const BASE_GOLD = 5;
+const STORAGE_KEY = "levelup-rpg-state-v1";
+
+const todayStr = () => new Date().toISOString().slice(0, 10);
+const uid = () => Math.random().toString(36).slice(2, 10);
+
+const CLASSES = {
+  str: { name: "Guerrier", emoji: "⚔️", color: "#FF6B5C", desc: "Force brute, puissance physique" },
+  end: { name: "Endurant", emoji: "🏃", color: "#4ADE80", desc: "Cardio, résistance, énergie" },
+  disc: { name: "Gardien", emoji: "🛡️", color: "#5CC8FF", desc: "Régularité, rigueur, habitudes" },
+  int: { name: "Sage", emoji: "🧠", color: "#C084FC", desc: "Concentration, clarté mentale" },
+};
+const RANKS = {
+  debutant: { name: "Novice", label: "Débutant", bonus: 3 },
+  intermediaire: { name: "Confirmé", label: "Intermédiaire", bonus: 6 },
+  expert: { name: "Maître", label: "Expert", bonus: 12 },
+};
+
+const ACCENT = "#2F7FFF"; // bleu électrique, utilisé partout (boutons + cadres)
+
+const GOALS = { muscle: "Prendre du muscle", perte: "Perte de poids", parait: "Mieux paraître", forme: "Rester en forme" };
+const GOAL_STAT = { muscle: "str", perte: "end", forme: "disc", parait: "int" };
+
+const ACTIVITY_FACTOR = { sedentaire: 1.2, leger: 1.375, modere: 1.55, actif: 1.725 };
+const ACTIVITY_LABELS = { sedentaire: "Sédentaire", leger: "Légèrement actif", modere: "Modérément actif", actif: "Très actif" };
+
+const MOTIVATION_MESSAGES = {
+  sante: "Ta santé te remercie déjà pour aujourd'hui. Une petite action suffit.",
+  perte: "Chaque jour compte vers ton objectif de poids. On y va ?",
+  stress: "Séance du jour = soupape de décompression. Prends ce moment pour toi.",
+  social: "Ton entourage te soutient. Montre-leur ce que tu vaux aujourd'hui.",
+  plaisir: "Le sport, c'est aussi du plaisir. Amuse-toi dans ta séance du jour.",
+};
+
+const GENDERS = { homme: { label: "Homme", emoji: "🙋‍♂️" }, femme: { label: "Femme", emoji: "🙋‍♀️" }, autre: { label: "Autre", emoji: "🧑" } };
+const MOTIVATION_OPTIONS = { sante: "Santé", perte: "Perte de poids", stress: "Gestion du stress", social: "Soutien social", plaisir: "Plaisir" };
+const ZONES = { "corps entier": "🧍 Corps entier", "poitrine": "💪 Poitrine", "dos": "🔙 Dos", "bras": "💪 Bras", "epaules": "🤷 Épaules", "abdos": "🎯 Abdos", "jambes": "🦵 Jambes", "fessiers": "🍑 Fessiers" };
+const HEALTH_ISSUES = { aucun: "✅ Aucun", genoux: "🦵 Genoux", hanche: "🦴 Hanche", dos: "🔙 Dos ou hernie", bras: "💪 Bras et épaules", saut: "🚫 Impossible de sauter" };
+const EQUIPMENT = { aucun: "🚫 Aucun", salle: "🏋️ Salle de sport complète", barre: "🏋️‍♂️ Barres", halteres: "🏋️ Haltères", kettlebell: "🔔 Kettlebells", machines: "⚙️ Machines" };
+const WEEK_DAYS = [{ k: "lun", l: "L" }, { k: "mar", l: "M" }, { k: "mer", l: "M" }, { k: "jeu", l: "J" }, { k: "ven", l: "V" }, { k: "sam", l: "S" }, { k: "dim", l: "D" }];
+
+// petite base d'exercices : filtrable par zone, équipement et contre-indications
+const EXERCISE_DB = [
+  { zone: "poitrine", equip: ["aucun"], name: "Pompes", how: "Mains un peu plus larges que les épaules, corps aligné de la tête aux talons, descends jusqu'à effleurer le sol coudes à 45°, remonte sans casser le dos. Fais-les sur les genoux si trop dur au début." , avoid: ["bras"] },
+  { zone: "poitrine", equip: ["halteres", "salle"], name: "Développé couché haltères", how: "Allongé, omoplates serrées, descends les haltères lentement au niveau de la poitrine, coudes à 45° du buste, pousse sans verrouiller brutalement les coudes." , avoid: ["bras"] },
+  { zone: "dos", equip: ["aucun"], name: "Superman", how: "Allongé sur le ventre, lève bras et jambes en même temps en gainant le bas du dos, tiens 2 secondes, redescends en douceur." , avoid: ["dos"] },
+  { zone: "dos", equip: ["barre", "salle"], name: "Tirage barre / rowing", how: "Dos droit, buste penché à 45°, tire la barre vers le nombril en resserrant les omoplates, redescends contrôlé sans arrondir le dos." , avoid: ["dos"] },
+  { zone: "bras", equip: ["aucun"], name: "Dips sur chaise", how: "Mains sur le bord d'une chaise, jambes tendues devant, descends en pliant les coudes vers l'arrière (pas sur les côtés), remonte sans bloquer les coudes." , avoid: ["bras"] },
+  { zone: "bras", equip: ["halteres"], name: "Curl biceps haltères", how: "Coudes collés au corps, remonte les haltères sans balancer le dos, contrôle la descente, ne verrouille pas les coudes en bas." , avoid: ["bras"] },
+  { zone: "epaules", equip: ["aucun"], name: "Pike push-ups", how: "Fesses hautes, corps en V inversé, descends la tête vers le sol entre les mains, pousse en gardant le dos droit." , avoid: ["bras"] },
+  { zone: "epaules", equip: ["halteres", "salle"], name: "Développé militaire haltères", how: "Debout ou assis, pousse les haltères au-dessus de la tête sans cambrer le bas du dos, redescends jusqu'aux épaules." , avoid: ["bras"] },
+  { zone: "abdos", equip: ["aucun"], name: "Gainage planche", how: "Corps aligné sur les avant-bras, abdos et fessiers contractés, ne laisse pas les hanches tomber ni monter. Commence par 20-30s." , avoid: [] },
+  { zone: "abdos", equip: ["aucun"], name: "Crunch", how: "Genoux pliés, mains derrière la tête sans tirer sur la nuque, décolle juste les omoplates en soufflant, redescends contrôlé." , avoid: ["dos"] },
+  { zone: "jambes", equip: ["aucun"], name: "Squats poids du corps", how: "Pieds largeur épaules, pousse les fesses en arrière comme pour t'asseoir, genoux dans l'axe des pieds (pas vers l'intérieur), descends jusqu'à cuisses parallèles au sol si possible." , avoid: ["genoux"] },
+  { zone: "jambes", equip: ["kettlebell", "halteres", "salle"], name: "Fentes avec charge", how: "Grand pas en avant, descends jusqu'à ce que le genou arrière frôle le sol, genou avant aligné avec la cheville, pousse pour revenir." , avoid: ["genoux"] },
+  { zone: "fessiers", equip: ["aucun"], name: "Hip thrust au sol", how: "Épaules au sol, genoux pliés, pousse les hanches vers le haut en contractant les fessiers, redescends sans reposer complètement." , avoid: ["hanche"] },
+  { zone: "fessiers", equip: ["kettlebell", "halteres"], name: "Soulevé de terre roumain", how: "Dos plat, charge proche du corps, pousse les hanches en arrière (pas les genoux), descends jusqu'à sentir l'étirement à l'arrière des cuisses, remonte en poussant le sol." , avoid: ["dos"] },
+  { zone: "corps entier", equip: ["aucun"], name: "Burpees", how: "Squat, pose les mains au sol, envoie les pieds en arrière, fais une pompe, ramène les pieds, saute. Enlève le saut final si les articulations tirent." , avoid: ["genoux", "saut"] },
+  { zone: "corps entier", equip: ["aucun"], name: "Marche rapide / jogging léger", how: "Foulée régulière, respiration contrôlée, bras relâchés le long du corps. Idéal en récupération active ou en base cardio." , avoid: [] },
+];
+
+function pickExercises(zones, equipment, health) {
+  const eq = equipment && equipment.length ? equipment : ["aucun"];
+  return EXERCISE_DB.filter((ex) => {
+    const zoneMatch = zones.includes("corps entier") ? true : zones.includes(ex.zone) || ex.zone === "corps entier";
+    const equipMatch = ex.equip.some((e) => eq.includes(e));
+    const healthOk = !ex.avoid.some((a) => health.includes(a));
+    return zoneMatch && equipMatch && healthOk;
+  }).slice(0, 8);
+}
+
+function calcBMI(weightKg, heightCm) {
+  const h = heightCm / 100;
+  return weightKg / (h * h);
+}
+function bmiCategory(bmi) {
+  if (bmi < 18.5) return { label: "Insuffisance pondérale", pct: (bmi / 18.5) * 20 };
+  if (bmi < 25) return { label: "Poids normal", pct: 20 + ((bmi - 18.5) / (25 - 18.5)) * 30 };
+  if (bmi < 30) return { label: "Surpoids", pct: 50 + ((bmi - 25) / (30 - 25)) * 25 };
+  return { label: "Obésité", pct: Math.min(100, 75 + ((bmi - 30) / 10) * 25) };
+}
+function calcTDEE(weightKg, heightCm, age, gender, activity) {
+  const base = gender === "femme"
+    ? 10 * weightKg + 6.25 * heightCm - 5 * age - 161
+    : gender === "homme"
+    ? 10 * weightKg + 6.25 * heightCm - 5 * age + 5
+    : 10 * weightKg + 6.25 * heightCm - 5 * age - 78; // moyenne neutre pour "autre"
+  return base * (ACTIVITY_FACTOR[activity] || 1.375);
+}
+function calcPlan(profile) {
+  const { weight, targetWeight, height, age, gender, activityLevel, goal } = profile;
+  const bmi = calcBMI(weight, height);
+  const diffKg = targetWeight - weight; // négatif = perte, positif = prise
+  const weeklyRateKg = 0.5; // rythme sûr et durable
+  const weeks = Math.max(2, Math.ceil(Math.abs(diffKg) / weeklyRateKg));
+  const days = weeks * 7;
+  const tdee = calcTDEE(weight, height, age, gender, activityLevel);
+  const dailyCalAdjust = (Math.abs(diffKg) * 7700) / days; // 7700 kcal ≈ 1kg de masse grasse
+  let targetCal = diffKg < 0 ? tdee - dailyCalAdjust : tdee + dailyCalAdjust;
+  targetCal = Math.max(gender === "femme" ? 1300 : 1500, Math.round(targetCal));
+  const proteinPerKg = goal === "muscle" ? 1.9 : 2.0;
+  const proteinG = Math.round(weight * proteinPerKg);
+  const fatCal = targetCal * 0.27;
+  const fatG = Math.round(fatCal / 9);
+  const proteinCal = proteinG * 4;
+  const carbsG = Math.max(50, Math.round((targetCal - fatCal - proteinCal) / 4));
+  const waterMl = Math.round(weight * 35);
+  const waterGlasses = Math.round(waterMl / 250);
+  return { bmi, diffKg, weeks, days, tdee: Math.round(tdee), targetCal, proteinG, carbsG, fatG, waterGlasses };
+}
+
+function trainingDurationRest(level) {
+  if (level === "debutant") return { duration: 30, rest: 90 };
+  if (level === "intermediaire") return { duration: 45, rest: 60 };
+  return { duration: 60, rest: 45 };
+}
+
+const defaultState = () => ({
+  onboarded: false,
+  requirePhoto: false,
+  proofsHistory: [],
+  character: { name: "Aventurier", level: 1, xp: 0, gold: 0, hp: 50, maxHp: 50, stats: { str: 0, end: 0, disc: 0, int: 0 }, className: "", rank: "" },
+  habits: [
+    { id: uid(), text: "Faire 20 pompes", stat: "str" },
+    { id: uid(), text: "Manger un fast-food", stat: "end", negative: true },
+  ],
+  dailies: [
+    { id: uid(), text: "Séance de sport", description: "20 min d'entraînement au choix : renforcement, cardio ou les deux. L'important est de bouger sérieusement, pas de s'échauffer 2 minutes.", stat: "str", difficulty: "medium", done: false, streak: 0 },
+    { id: uid(), text: "10 min d'étirements", description: "Étirements complets : jambes, dos, épaules. Prends ton temps, respire, ne force pas.", stat: "end", difficulty: "easy", done: false, streak: 0 },
+  ],
+  todos: [{ id: uid(), text: "Planifier le programme de la semaine", description: "", stat: "disc", difficulty: "easy", done: false }],
+  rewards: [
+    { id: uid(), text: "1h de jeu vidéo", cost: 40 },
+    { id: uid(), text: "Session VR", cost: 60 },
+  ],
+  lastLogin: todayStr(),
+});
+
+function xpToNext(level) { return 100 + (level - 1) * 40; }
+
+function loadState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (typeof parsed.onboarded === "undefined") parsed.onboarded = true; // pre-existing saves skip the quiz
+      return parsed;
+    }
+  } catch (e) {}
+  return defaultState();
+}
+function saveState(state) {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) {}
+}
+
+function SysPanel({ children, className = "", accent = "#45E0D1" }) {
+  return (
+    <div className={"relative " + className}>
+      <div style={{ position: "absolute", top: -1, left: -1, width: 12, height: 12, borderTop: "2px solid " + accent, borderLeft: "2px solid " + accent }} />
+      <div style={{ position: "absolute", top: -1, right: -1, width: 12, height: 12, borderTop: "2px solid " + accent, borderRight: "2px solid " + accent }} />
+      <div style={{ position: "absolute", bottom: -1, left: -1, width: 12, height: 12, borderBottom: "2px solid " + accent, borderLeft: "2px solid " + accent }} />
+      <div style={{ position: "absolute", bottom: -1, right: -1, width: 12, height: 12, borderBottom: "2px solid " + accent, borderRight: "2px solid " + accent }} />
+      <div style={{ border: "1px solid #233041", background: "#0F1621", padding: "12px 16px" }}>{children}</div>
+    </div>
+  );
+}
+
+function Bar({ value, max, color, height = 8 }) {
+  const pct = Math.max(0, Math.min(100, (value / max) * 100));
+  return (
+    <div style={{ width: "100%", background: "#1A2330", borderRadius: 2, overflow: "hidden", height }}>
+      <div style={{ height: "100%", width: pct + "%", background: color, boxShadow: "0 0 8px " + color + "99", transition: "width .5s" }} />
+    </div>
+  );
+}
+
+function StatChip({ statKey, value }) {
+  const s = STATS[statKey];
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 6, background: "#131C27", border: "1px solid #233041", borderRadius: 4, padding: "4px 8px" }}>
+      <span style={{ fontSize: 12 }}>{s.emoji}</span>
+      <span style={{ fontSize: 11, fontFamily: "monospace", color: s.color }}>{value}</span>
+    </div>
+  );
+}
+
+function DiffPicker({ value, onChange }) {
+  return (
+    <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+      {Object.entries(DIFF).map(([k, d]) => (
+        <button key={k} onClick={() => onChange(k)}
+          style={{ padding: "6px 8px", fontSize: 11, fontFamily: "monospace", borderRadius: 4,
+            border: "1px solid " + (value === k ? "#45E0D1" : "#233041"),
+            color: value === k ? "#45E0D1" : "#7C8896",
+            background: value === k ? "#45E0D122" : "transparent" }}>
+          {d.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function StatPicker({ value, onChange }) {
+  return (
+    <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+      {Object.entries(STATS).map(([k, s]) => (
+        <button key={k} onClick={() => onChange(k)}
+          style={{ padding: "6px 8px", display: "flex", alignItems: "center", gap: 4, fontSize: 11, fontFamily: "monospace", borderRadius: 4,
+            border: "1px solid " + (value === k ? s.color : "#233041"),
+            color: value === k ? s.color : "#7C8896",
+            background: value === k ? s.color + "22" : "transparent" }}>
+          <span>{s.emoji}</span>{s.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function GlowButton({ children, onClick, active, accent = "#2F7FFF", style = {}, full = false }) {
+  return (
+    <button
+      onClick={onClick}
+      className="font-hud"
+      style={{
+        width: full ? "100%" : "auto",
+        padding: "12px 16px",
+        borderRadius: 999,
+        border: "1.5px solid " + accent,
+        background: active ? accent + "1F" : "#0F1621",
+        color: active ? accent : "#B9C2CC",
+        fontWeight: 600,
+        fontSize: 14,
+        boxShadow: active ? "0 0 14px " + accent + "55" : "none",
+        transition: "all .15s",
+        ...style,
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function OptionCard({ emoji, title, desc, active, accent, onClick, delay = 0 }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        width: "100%",
+        textAlign: "left",
+        background: "none",
+        border: "none",
+        padding: 0,
+        marginBottom: 12,
+        opacity: 0,
+        animation: "slideUp .8s cubic-bezier(.2,.7,.3,1) forwards",
+        animationDelay: delay + "s",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          padding: "14px 16px",
+          borderRadius: 16,
+          border: "1.5px solid " + (active ? accent : "#26313F"),
+          background: active
+            ? "linear-gradient(145deg, " + accent + "22, #10161F)"
+            : "linear-gradient(145deg, #161F2B, #0C1218)",
+          boxShadow: active
+            ? "0 6px 16px rgba(0,0,0,.45), 0 0 22px " + accent + "40, inset 0 1px 0 rgba(255,255,255,.06)"
+            : "0 4px 10px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.03)",
+          transform: active ? "translateY(-2px)" : "translateY(0)",
+          transition: "all .2s ease",
+        }}
+      >
+        <div style={{ fontSize: 24, width: 36, textAlign: "center" }}>{emoji}</div>
+        <div style={{ flex: 1 }}>
+          <div className="font-hud" style={{ fontWeight: 600, fontSize: 14, color: active ? accent : "#E7ECEF" }}>{title}</div>
+          {desc && <div style={{ fontSize: 11, color: "#7C8896", marginTop: 2 }}>{desc}</div>}
+        </div>
+        <div style={{ width: 18, height: 18, borderRadius: "50%", border: "2px solid " + (active ? accent : "#3A4657"), background: active ? accent : "transparent", boxShadow: active ? "0 0 8px " + accent : "none", flexShrink: 0 }} />
+      </div>
+    </button>
+  );
+}
+
+function Panel({ children, style = {} }) {
+  return (
+    <div style={{ border: "1.5px solid " + ACCENT, borderRadius: 16, background: "linear-gradient(145deg, #101826, #0A0F17)", boxShadow: "0 0 16px " + ACCENT + "30, 0 4px 12px rgba(0,0,0,.4)", padding: "16px 18px", marginBottom: 14, ...style }}>
+      {children}
+    </div>
+  );
+}
+
+function RoundButton({ children, onClick, active, full, style = {} }) {
+  return (
+    <button
+      onClick={onClick}
+      className="font-hud"
+      style={{
+        width: full ? "100%" : "auto",
+        padding: "12px 18px",
+        borderRadius: 999,
+        border: "1.5px solid " + ACCENT,
+        background: active ? ACCENT : "transparent",
+        color: active ? "#06101F" : ACCENT,
+        fontWeight: 700,
+        fontSize: 14,
+        boxShadow: active ? "0 0 14px " + ACCENT + "70" : "none",
+        transition: "all .15s",
+        ...style,
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function MultiPicker({ options, selected, onToggle, exclusiveKey }) {
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+      {Object.entries(options).map(([k, label]) => {
+        const active = selected.includes(k);
+        return (
+          <button
+            key={k}
+            onClick={() => onToggle(k)}
+            className="font-hud"
+            style={{
+              padding: "9px 14px", borderRadius: 999, fontSize: 12.5,
+              border: "1.5px solid " + (active ? ACCENT : "#233041"),
+              background: active ? ACCENT + "22" : "#0F1621",
+              color: active ? ACCENT : "#B9C2CC",
+              boxShadow: active ? "0 0 10px " + ACCENT + "55" : "none",
+            }}
+          >
+            {label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function DragPicker({ value, onChange, min, max, step = 1, format, sub }) {
+  const dragRef = useRef({ startY: 0, startVal: value, dragging: false });
+  const SENSITIVITY = 4; // px per step
+
+  function clamp(v) { return Math.min(max, Math.max(min, v)); }
+
+  function onDown(clientY) {
+    dragRef.current = { startY: clientY, startVal: value, dragging: true };
+  }
+  function onMove(clientY) {
+    if (!dragRef.current.dragging) return;
+    const deltaSteps = Math.round((dragRef.current.startY - clientY) / SENSITIVITY);
+    onChange(clamp(dragRef.current.startVal + deltaSteps * step));
+  }
+  function onUp() { dragRef.current.dragging = false; }
+
+  return (
+    <div style={{ userSelect: "none" }}>
+      <div
+        onPointerDown={(e) => { e.currentTarget.setPointerCapture(e.pointerId); onDown(e.clientY); }}
+        onPointerMove={(e) => onMove(e.clientY)}
+        onPointerUp={onUp}
+        onPointerCancel={onUp}
+        style={{
+          border: "1.5px solid " + ACCENT, borderRadius: 20, padding: "28px 20px", textAlign: "center",
+          background: "linear-gradient(145deg, #101826, #0A0F17)", boxShadow: "0 0 16px " + ACCENT + "25",
+          touchAction: "none", cursor: "ns-resize",
+        }}
+      >
+        <div style={{ fontSize: 11, color: "#7C8896", marginBottom: 6 }}>▲ glisse vers le haut / bas ▼</div>
+        <div className="font-hud" style={{ fontSize: 42, fontWeight: 700, color: ACCENT, textShadow: "0 0 16px " + ACCENT + "80" }}>
+          {format ? format(value) : value}
+        </div>
+        {sub && <div style={{ fontSize: 12, color: "#7C8896", marginTop: 4 }}>{sub}</div>}
+      </div>
+      <div style={{ display: "flex", gap: 10, marginTop: 12, justifyContent: "center" }}>
+        <RoundButton onClick={() => onChange(clamp(value - step))}>−</RoundButton>
+        <RoundButton onClick={() => onChange(clamp(value + step))}>+</RoundButton>
+      </div>
+    </div>
+  );
+}
+
+function FrequencyDots({ value, onChange }) {
+  const vals = [2, 3, 4, 5, 6, 7];
+  return (
+    <div>
+      <div className="font-hud" style={{ textAlign: "center", fontSize: 40, fontWeight: 700, color: ACCENT, textShadow: "0 0 16px " + ACCENT + "80", marginBottom: 18 }}>
+        {value}x / semaine
+      </div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 6px" }}>
+        {vals.map((v) => (
+          <div key={v} style={{ display: "flex", flexDirection: "column", alignItems: "center", flex: 1 }}>
+            <div className="font-hud" style={{ fontSize: 11, color: ACCENT, marginBottom: 6 }}>{v}x</div>
+            <button
+              onClick={() => onChange(v)}
+              style={{
+                width: 22, height: 22, borderRadius: "50%", border: "2px solid " + ACCENT,
+                background: value === v ? ACCENT : "transparent",
+                boxShadow: value === v ? "0 0 10px " + ACCENT : "none",
+              }}
+            />
+          </div>
+        ))}
+      </div>
+      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4, padding: "0 6px" }}>
+        <span style={{ fontSize: 10, color: "#7C8896" }}>moins</span>
+        <span style={{ fontSize: 10, color: "#7C8896" }}>plus</span>
+      </div>
+    </div>
+  );
+}
+
+function DaySelector({ frequency, selected, onToggle, error }) {
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 6, justifyContent: "center" }}>
+        {WEEK_DAYS.map((d) => {
+          const active = selected.includes(d.k);
+          return (
+            <button
+              key={d.k}
+              onClick={() => onToggle(d.k)}
+              className="font-hud"
+              style={{
+                width: 40, height: 40, borderRadius: 999, fontSize: 14, fontWeight: 700,
+                border: "1.5px solid " + (active ? ACCENT : "#233041"),
+                background: active ? ACCENT : "#0F1621",
+                color: active ? "#06101F" : "#B9C2CC",
+                boxShadow: active ? "0 0 10px " + ACCENT + "70" : "none",
+              }}
+            >
+              {d.l}
+            </button>
+          );
+        })}
+      </div>
+      <div style={{ textAlign: "center", fontSize: 12, color: "#7C8896", marginTop: 10 }}>
+        {selected.length}/{frequency} jour(s) sélectionné(s)
+      </div>
+      {error && <div style={{ textAlign: "center", fontSize: 12, color: "#FF5C5C", marginTop: 8 }}>{error}</div>}
+    </div>
+  );
+}
+
+function WeightChart({ start, target, weeks }) {
+  const w = 280, h = 140, pad = 24;
+  const minV = Math.min(start, target) - 2, maxV = Math.max(start, target) + 2;
+  const x0 = pad, x1 = w - pad, y0 = h - pad, y1 = pad;
+  const yFor = (v) => y0 - ((v - minV) / (maxV - minV)) * (y0 - y1);
+  return (
+    <svg width="100%" viewBox={"0 0 " + w + " " + h}>
+      <line x1={x0} y1={y0} x2={x1} y2={y0} stroke="#233041" strokeWidth="1" />
+      <line x1={x0} y1={y1} x2={x0} y2={y0} stroke="#233041" strokeWidth="1" />
+      <line x1={x0} y1={yFor(start)} x2={x1} y2={yFor(target)} stroke={ACCENT} strokeWidth="2.5" style={{ filter: "drop-shadow(0 0 4px " + ACCENT + ")" }} />
+      <circle cx={x0} cy={yFor(start)} r="4" fill={ACCENT} />
+      <circle cx={x1} cy={yFor(target)} r="4" fill={ACCENT} />
+      <text x={x0} y={y0 + 16} fill="#7C8896" fontSize="9" textAnchor="start">Départ · {start}kg</text>
+      <text x={x1} y={y0 + 16} fill="#7C8896" fontSize="9" textAnchor="end">Objectif · {target}kg</text>
+      <text x={(x0 + x1) / 2} y={y1 - 8} fill="#7C8896" fontSize="9" textAnchor="middle">{weeks} semaines</text>
+    </svg>
+  );
+}
+
+function BMIGauge({ bmi, category }) {
+  const pct = Math.max(2, Math.min(98, category.pct));
+  return (
+    <div>
+      <div style={{ position: "relative", height: 14, borderRadius: 8, overflow: "hidden", background: "linear-gradient(90deg, #5CC8FF 0%, #4ADE80 20%, #4ADE80 50%, #E8B44A 50%, #E8B44A 75%, #FF5C5C 75%, #FF5C5C 100%)" }}>
+        <div style={{ position: "absolute", left: pct + "%", top: -4, width: 3, height: 22, background: "#fff", borderRadius: 2, boxShadow: "0 0 6px #fff" }} />
+      </div>
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 8, color: "#7C8896", marginTop: 4 }}>
+        <span>Insuffisance</span><span>Normal</span><span>Surpoids</span><span>Obésité</span>
+      </div>
+      <div style={{ textAlign: "center", marginTop: 10 }}>
+        <span className="font-hud" style={{ fontSize: 24, fontWeight: 700, color: ACCENT }}>{bmi.toFixed(1)}</span>
+        <span style={{ fontSize: 12, color: "#B9C2CC", marginLeft: 8 }}>{category.label}</span>
+      </div>
+    </div>
+  );
+}
+
+
+function Onboarding({ onComplete }) {
+  const [step, setStep] = useState(0);
+  const [revealing, setRevealing] = useState(false);
+  const [answers, setAnswers] = useState({
+    name: "", gender: null, goal: null, motivation: null,
+    zones: [], level: null, activityLevel: null,
+    heightUnit: "cm", height: 170, weight: 70, targetWeight: 65, age: 25,
+    health: [], equipment: [], frequency: 3, days: [], daysError: null,
+  });
+
+  function set(field, value) { setAnswers((p) => ({ ...p, [field]: value })); }
+  function toggleMulti(field, key, exclusiveKey) {
+    setAnswers((p) => {
+      let arr = p[field] || [];
+      if (exclusiveKey && key === exclusiveKey) arr = arr.includes(key) ? [] : [exclusiveKey];
+      else if (exclusiveKey && arr.includes(exclusiveKey)) arr = [key];
+      else arr = arr.includes(key) ? arr.filter((x) => x !== key) : [...arr, key];
+      return { ...p, [field]: arr };
+    });
+  }
+  function toggleDay(k) {
+    setAnswers((p) => {
+      const arr = p.days.includes(k) ? p.days.filter((x) => x !== k) : [...p.days, k];
+      return { ...p, days: arr, daysError: null };
+    });
+  }
+
+  const STEPS = ["notif", "name", "gender", "goal", "motivation", "zones", "level", "activity", "height", "weight", "targetWeight", "age", "health", "equipment", "frequency", "days", "results"];
+  const idx = STEPS[step];
+
+  const canNext =
+    idx === "notif" ? true :
+    idx === "name" ? answers.name.trim().length > 0 :
+    idx === "gender" ? !!answers.gender :
+    idx === "goal" ? !!answers.goal :
+    idx === "motivation" ? !!answers.motivation :
+    idx === "zones" ? answers.zones.length > 0 :
+    idx === "level" ? !!answers.level :
+    idx === "activity" ? !!answers.activityLevel :
+    idx === "height" ? true :
+    idx === "weight" ? true :
+    idx === "targetWeight" ? true :
+    idx === "age" ? true :
+    idx === "health" ? answers.health.length > 0 :
+    idx === "equipment" ? answers.equipment.length > 0 :
+    idx === "frequency" ? true :
+    idx === "days" ? true :
+    true;
+
+  function next() {
+    if (idx === "days") {
+      if (answers.days.length !== answers.frequency) {
+        set("daysError", "Tu as choisi " + answers.frequency + "x par semaine — sélectionne exactement " + answers.frequency + " jour(s), pas plus, pas moins.");
+        return;
+      }
+    }
+    if (step < STEPS.length - 1) setStep(step + 1);
+  }
+  function back() { if (step > 0) setStep(step - 1); }
+
+  function beginAdventure() {
+    setRevealing(true);
+    setTimeout(() => finish(), 2200);
+  }
+
+  function finish() {
+    const cls = CLASSES[GOAL_STAT[answers.goal]];
+    const lvl = RANKS[answers.level];
+    const plan = calcPlan({ weight: answers.weight, targetWeight: answers.targetWeight, height: answers.height, age: answers.age, gender: answers.gender, activityLevel: answers.activityLevel, goal: answers.goal });
+    const exercises = pickExercises(answers.zones, answers.equipment, answers.health);
+    const durRest = trainingDurationRest(answers.level);
+    onComplete({
+      name: answers.name.trim() || "Aventurier",
+      gender: answers.gender, goal: answers.goal, motivation: answers.motivation,
+      zones: answers.zones, level: answers.level, activityLevel: answers.activityLevel,
+      height: answers.height, weight: answers.weight, targetWeight: answers.targetWeight, age: answers.age,
+      health: answers.health, equipment: answers.equipment, frequency: answers.frequency, days: answers.days,
+      className: cls.name, rankName: lvl.name, bonus: lvl.bonus,
+      plan, exercises, durRest,
+    });
+  }
+
+  if (revealing) {
+    const cls = CLASSES[GOAL_STAT[answers.goal]];
+    return (
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", padding: 24, textAlign: "center", background: "#060B12" }}>
+        <div className="font-hud" style={{ color: "#7C8896", fontSize: 12, letterSpacing: 2, marginBottom: 16 }}>ÉVEIL DU SYSTÈME EN COURS...</div>
+        <div style={{ fontSize: 56, marginBottom: 12, animation: "pulse 1.2s infinite" }}>{cls.emoji}</div>
+        <div className="font-hud" style={{ fontSize: 22, fontWeight: 700, color: ACCENT, textShadow: "0 0 20px " + ACCENT }}>
+          CLASSE : {cls.name.toUpperCase()}
+        </div>
+        <style>{"@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.6;transform:scale(1.08)}}"}</style>
+      </div>
+    );
+  }
+
+  // ---- notification / accept screen ----
+  if (idx === "notif") {
+    return (
+      <div style={{ minHeight: "100vh", background: "#060B18", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+        <div style={{ maxWidth: 380, width: "100%" }}>
+          <Panel style={{ textAlign: "center", padding: "28px 22px" }}>
+            <div className="font-hud" style={{ fontSize: 11, color: ACCENT, letterSpacing: 2, marginBottom: 14 }}>NOTIFICATION</div>
+            <div style={{ fontSize: 15, lineHeight: 1.6, color: "#E7ECEF", marginBottom: 22 }}>
+              Vous avez acquis les qualifications pour devenir un joueur.
+            </div>
+            <RoundButton onClick={next} active full>Accepter ?</RoundButton>
+          </Panel>
+        </div>
+      </div>
+    );
+  }
+
+  // ---- results page ----
+  if (idx === "results") {
+    const plan = calcPlan({ weight: answers.weight, targetWeight: answers.targetWeight, height: answers.height, age: answers.age, gender: answers.gender, activityLevel: answers.activityLevel, goal: answers.goal });
+    const cat = bmiCategory(plan.bmi);
+    const exercises = pickExercises(answers.zones, answers.equipment, answers.health);
+    const durRest = trainingDurationRest(answers.level);
+    return (
+      <div style={{ minHeight: "100vh", padding: "20px 16px 40px", background: "#060B12" }}>
+        <h1 className="font-hud" style={{ fontSize: 18, fontWeight: 700, marginBottom: 14, textAlign: "center" }}>Ton profil est prêt</h1>
+
+        <Panel>
+          <div className="font-hud" style={{ fontSize: 12, color: ACCENT, marginBottom: 8 }}>ÉVOLUTION PRÉVUE</div>
+          <WeightChart start={answers.weight} target={answers.targetWeight} weeks={plan.weeks} />
+        </Panel>
+
+        <Panel>
+          <div className="font-hud" style={{ fontSize: 12, color: ACCENT, marginBottom: 10 }}>TON IMC</div>
+          <BMIGauge bmi={plan.bmi} category={cat} />
+        </Panel>
+
+        <Panel>
+          <div className="font-hud" style={{ fontSize: 12, color: ACCENT, marginBottom: 10 }}>RÉCAPITULATIF</div>
+          {[
+            ["Genre", GENDERS[answers.gender].label],
+            ["Objectif", GOALS[answers.goal]],
+            ["Motivation", MOTIVATION_OPTIONS[answers.motivation]],
+            ["Zones ciblées", answers.zones.map((z) => ZONES[z]).join(", ")],
+            ["Niveau", RANKS[answers.level].label],
+            ["Activité", ACTIVITY_LABELS[answers.activityLevel]],
+            ["Taille", answers.height + " cm"],
+            ["Poids", answers.weight + " kg"],
+            ["Objectif poids", answers.targetWeight + " kg"],
+            ["Âge", answers.age + " ans"],
+            ["Santé", answers.health.map((h) => HEALTH_ISSUES[h]).join(", ")],
+            ["Équipement", answers.equipment.map((e) => EQUIPMENT[e]).join(", ")],
+            ["Fréquence", answers.frequency + "x / semaine"],
+          ].map(([k, v]) => (
+            <div key={k} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, padding: "5px 0", borderBottom: "1px solid #182230" }}>
+              <span style={{ color: "#7C8896" }}>{k}</span>
+              <span style={{ color: "#E7ECEF", textAlign: "right", maxWidth: "60%" }}>{v}</span>
+            </div>
+          ))}
+        </Panel>
+
+        <Panel style={{ textAlign: "center" }}>
+          <div className="font-hud" style={{ fontSize: 12, color: ACCENT, marginBottom: 6 }}>DURÉE POUR ATTEINDRE L'OBJECTIF</div>
+          <div className="font-hud" style={{ fontSize: 30, fontWeight: 700, color: "#E7ECEF" }}>{plan.days} jours</div>
+          <div style={{ fontSize: 11, color: "#7C8896" }}>≈ {plan.weeks} semaines</div>
+        </Panel>
+
+        <Panel style={{ textAlign: "center" }}>
+          <div className="font-hud" style={{ fontSize: 12, color: ACCENT, marginBottom: 6 }}>OBJECTIF CALORIQUE QUOTIDIEN</div>
+          <div className="font-hud" style={{ fontSize: 30, fontWeight: 700, color: "#E7ECEF" }}>{plan.targetCal} kcal</div>
+          <div style={{ fontSize: 11, color: "#7C8896" }}>Dépense estimée : {plan.tdee} kcal</div>
+        </Panel>
+
+        <Panel>
+          <div className="font-hud" style={{ fontSize: 12, color: ACCENT, marginBottom: 10, textAlign: "center" }}>MACROS PAR JOUR</div>
+          <div style={{ display: "flex", justifyContent: "space-around" }}>
+            <div style={{ textAlign: "center" }}><div style={{ fontSize: 22 }}>🥩</div><div className="font-hud" style={{ fontSize: 16, fontWeight: 700 }}>{plan.proteinG}g</div><div style={{ fontSize: 10, color: "#7C8896" }}>Protéines</div></div>
+            <div style={{ textAlign: "center" }}><div style={{ fontSize: 22 }}>🍞</div><div className="font-hud" style={{ fontSize: 16, fontWeight: 700 }}>{plan.carbsG}g</div><div style={{ fontSize: 10, color: "#7C8896" }}>Glucides</div></div>
+            <div style={{ textAlign: "center" }}><div style={{ fontSize: 22 }}>🥑</div><div className="font-hud" style={{ fontSize: 16, fontWeight: 700 }}>{plan.fatG}g</div><div style={{ fontSize: 10, color: "#7C8896" }}>Lipides</div></div>
+          </div>
+        </Panel>
+
+        <Panel style={{ textAlign: "center" }}>
+          <div style={{ fontSize: 22 }}>🥤</div>
+          <div className="font-hud" style={{ fontSize: 24, fontWeight: 700 }}>{plan.waterGlasses} verres</div>
+          <div style={{ fontSize: 11, color: "#7C8896" }}>de 25cl par jour</div>
+        </Panel>
+
+        <Panel>
+          <div style={{ display: "flex", justifyContent: "space-around", textAlign: "center" }}>
+            <div><div className="font-hud" style={{ fontSize: 20, fontWeight: 700, color: ACCENT }}>{durRest.duration} min</div><div style={{ fontSize: 10, color: "#7C8896" }}>Durée séance</div></div>
+            <div><div className="font-hud" style={{ fontSize: 20, fontWeight: 700, color: ACCENT }}>{durRest.rest}s</div><div style={{ fontSize: 10, color: "#7C8896" }}>Temps de repos</div></div>
+          </div>
+        </Panel>
+
+        <Panel style={{ textAlign: "center" }}>
+          <div className="font-hud" style={{ fontSize: 20, fontWeight: 700 }}>{answers.frequency} séance(s) / semaine</div>
+          <div style={{ fontSize: 11, color: "#7C8896", marginTop: 4 }}>{answers.days.map((d) => WEEK_DAYS.find((w) => w.k === d).l).join(" · ")}</div>
+        </Panel>
+
+        <Panel>
+          <div className="font-hud" style={{ fontSize: 12, color: ACCENT, marginBottom: 8 }}>CONSEILS DU SYSTÈME</div>
+          <div style={{ fontSize: 12.5, lineHeight: 1.6, color: "#E7ECEF" }}>
+            Concentrez-vous sur un déficit calorique durable via l'alimentation et l'exercice. Priorisez les aliments complets, un apport protéique adéquat pour préserver vos muscles et une activité cardio-vasculaire régulière. Restez constant et patient.
+          </div>
+        </Panel>
+
+        <Panel>
+          <div className="font-hud" style={{ fontSize: 12, color: ACCENT, marginBottom: 10 }}>EXERCICES RECOMMANDÉS</div>
+          {exercises.length === 0 && <div style={{ fontSize: 12, color: "#7C8896" }}>Pas d'exercice trouvé pour cette combinaison — ajuste zones ou équipement plus tard.</div>}
+          {exercises.map((ex) => (
+            <div key={ex.name} style={{ marginBottom: 12, paddingBottom: 12, borderBottom: "1px solid #182230" }}>
+              <div className="font-hud" style={{ fontSize: 13, fontWeight: 700, color: "#E7ECEF", marginBottom: 4 }}>{ex.name}</div>
+              <div style={{ fontSize: 11.5, color: "#B9C2CC", lineHeight: 1.5 }}>{ex.how}</div>
+            </div>
+          ))}
+        </Panel>
+
+        <div style={{ fontSize: 10, color: "#5A6572", lineHeight: 1.5, textAlign: "center", padding: "8px 10px 20px" }}>
+          Les informations fournies sont uniquement à titre de référence générale et ne doivent pas remplacer un avis médical professionnel.
+        </div>
+
+        <RoundButton onClick={beginAdventure} active full>Commencer l'aventure</RoundButton>
+      </div>
+    );
+  }
+
+  // ---- generic step wrapper for all remaining steps ----
+  return (
+    <div style={{ minHeight: "100vh", padding: "24px 20px 40px", display: "flex", flexDirection: "column", background: "#060B12" }}>
+      <div style={{ display: "flex", gap: 3, marginBottom: 24 }}>
+        {STEPS.slice(1, -1).map((s, i) => (
+          <div key={s} style={{ flex: 1, height: 3, borderRadius: 2, background: (i + 1) <= step ? ACCENT : "#1A2330" }} />
+        ))}
+      </div>
+
+      {idx === "name" && (
+        <div>
+          <h1 className="font-hud" style={{ fontSize: 20, fontWeight: 700, marginBottom: 8 }}>Comment le Système doit-il t'appeler ?</h1>
+          <p style={{ fontSize: 12, color: "#7C8896", marginBottom: 20 }}>Ton nom de joueur, modifiable plus tard.</p>
+          <input autoFocus value={answers.name} onChange={(e) => set("name", e.target.value)} placeholder="Ton nom..."
+            style={{ width: "100%", background: "#131C27", border: "1.5px solid " + ACCENT, borderRadius: 12, padding: "12px 14px", fontSize: 15, outline: "none", color: "#E7ECEF" }} />
+        </div>
+      )}
+
+      {idx === "gender" && (
+        <div>
+          <h1 className="font-hud" style={{ fontSize: 20, fontWeight: 700, marginBottom: 20 }}>Ton genre ?</h1>
+          {Object.entries(GENDERS).map(([k, g], i) => (
+            <OptionCard key={k} emoji={g.emoji} title={g.label} active={answers.gender === k} accent={ACCENT} onClick={() => set("gender", k)} delay={i * 0.12} />
+          ))}
+        </div>
+      )}
+
+      {idx === "goal" && (
+        <div>
+          <h1 className="font-hud" style={{ fontSize: 20, fontWeight: 700, marginBottom: 20 }}>Ton objectif ?</h1>
+          {Object.entries(GOALS).map(([k, label], i) => (
+            <OptionCard key={k} emoji="🎯" title={label} active={answers.goal === k} accent={ACCENT} onClick={() => set("goal", k)} delay={i * 0.12} />
+          ))}
+        </div>
+      )}
+
+      {idx === "motivation" && (
+        <div>
+          <h1 className="font-hud" style={{ fontSize: 20, fontWeight: 700, marginBottom: 20 }}>Qu'est-ce qui vous motive à vous entraîner ?</h1>
+          {Object.entries(MOTIVATION_OPTIONS).map(([k, label], i) => (
+            <OptionCard key={k} emoji="✨" title={label} active={answers.motivation === k} accent={ACCENT} onClick={() => set("motivation", k)} delay={i * 0.1} />
+          ))}
+        </div>
+      )}
+
+      {idx === "zones" && (
+        <div>
+          <h1 className="font-hud" style={{ fontSize: 20, fontWeight: 700, marginBottom: 6 }}>Zones ciblées ?</h1>
+          <p style={{ fontSize: 12, color: "#7C8896", marginBottom: 18 }}>Sélection multiple possible.</p>
+          <MultiPicker options={ZONES} selected={answers.zones} onToggle={(k) => toggleMulti("zones", k)} />
+        </div>
+      )}
+
+      {idx === "level" && (
+        <div>
+          <h1 className="font-hud" style={{ fontSize: 20, fontWeight: 700, marginBottom: 20 }}>Ton niveau ?</h1>
+          {Object.entries(RANKS).map(([k, r], i) => (
+            <OptionCard key={k} emoji="🎖️" title={r.label} active={answers.level === k} accent={ACCENT} onClick={() => set("level", k)} delay={i * 0.12} />
+          ))}
+        </div>
+      )}
+
+      {idx === "activity" && (
+        <div>
+          <h1 className="font-hud" style={{ fontSize: 20, fontWeight: 700, marginBottom: 20 }}>Ton niveau d'activité ?</h1>
+          {Object.entries(ACTIVITY_LABELS).map(([k, label], i) => (
+            <OptionCard key={k} emoji="📊" title={label} active={answers.activityLevel === k} accent={ACCENT} onClick={() => set("activityLevel", k)} delay={i * 0.12} />
+          ))}
+        </div>
+      )}
+
+      {idx === "height" && (
+        <div>
+          <h1 className="font-hud" style={{ fontSize: 20, fontWeight: 700, marginBottom: 6 }}>Ta taille ?</h1>
+          <div style={{ display: "flex", justifyContent: "center", gap: 0, marginBottom: 18 }}>
+            <button onClick={() => set("heightUnit", "cm")} className="font-hud" style={{ padding: "6px 16px", borderRadius: "999px 0 0 999px", border: "1.5px solid " + ACCENT, background: answers.heightUnit === "cm" ? ACCENT : "transparent", color: answers.heightUnit === "cm" ? "#06101F" : ACCENT, fontSize: 12, fontWeight: 700 }}>cm</button>
+            <button onClick={() => set("heightUnit", "ft")} className="font-hud" style={{ padding: "6px 16px", borderRadius: "0 999px 999px 0", border: "1.5px solid " + ACCENT, borderLeft: "none", background: answers.heightUnit === "ft" ? ACCENT : "transparent", color: answers.heightUnit === "ft" ? "#06101F" : ACCENT, fontSize: 12, fontWeight: 700 }}>ft</button>
+          </div>
+          <DragPicker value={answers.height} onChange={(v) => set("height", v)} min={100} max={230} step={1}
+            format={(v) => answers.heightUnit === "cm" ? v + " cm" : Math.floor(v / 30.48) + "'" + Math.round((v / 2.54) % 12) + '"'} />
+        </div>
+      )}
+
+      {idx === "weight" && (
+        <div>
+          <h1 className="font-hud" style={{ fontSize: 20, fontWeight: 700, marginBottom: 20 }}>Ton poids actuel ?</h1>
+          <DragPicker value={answers.weight} onChange={(v) => set("weight", v)} min={30} max={200} step={1} format={(v) => v + " kg"} />
+        </div>
+      )}
+
+      {idx === "targetWeight" && (
+        <div>
+          <h1 className="font-hud" style={{ fontSize: 20, fontWeight: 700, marginBottom: 20 }}>Ton poids cible ?</h1>
+          <DragPicker value={answers.targetWeight} onChange={(v) => set("targetWeight", v)} min={30} max={200} step={1} format={(v) => v + " kg"} />
+        </div>
+      )}
+
+      {idx === "age" && (
+        <div>
+          <h1 className="font-hud" style={{ fontSize: 20, fontWeight: 700, marginBottom: 20 }}>Ton âge ?</h1>
+          <DragPicker value={answers.age} onChange={(v) => set("age", v)} min={12} max={90} step={1} format={(v) => v + " ans"} />
+        </div>
+      )}
+
+      {idx === "health" && (
+        <div>
+          <h1 className="font-hud" style={{ fontSize: 20, fontWeight: 700, marginBottom: 6 }}>Problèmes de santé ?</h1>
+          <p style={{ fontSize: 12, color: "#7C8896", marginBottom: 18 }}>Pour éviter les exercices à risque.</p>
+          <MultiPicker options={HEALTH_ISSUES} selected={answers.health} onToggle={(k) => toggleMulti("health", k, "aucun")} />
+        </div>
+      )}
+
+      {idx === "equipment" && (
+        <div>
+          <h1 className="font-hud" style={{ fontSize: 20, fontWeight: 700, marginBottom: 6 }}>Équipement disponible ?</h1>
+          <p style={{ fontSize: 12, color: "#7C8896", marginBottom: 18 }}>Sélection multiple possible.</p>
+          <MultiPicker options={EQUIPMENT} selected={answers.equipment} onToggle={(k) => toggleMulti("equipment", k, "aucun")} />
+        </div>
+      )}
+
+      {idx === "frequency" && (
+        <div>
+          <h1 className="font-hud" style={{ fontSize: 20, fontWeight: 700, marginBottom: 24 }}>Fréquence d'entraînement ?</h1>
+          <FrequencyDots value={answers.frequency} onChange={(v) => set("frequency", v)} />
+        </div>
+      )}
+
+      {idx === "days" && (
+        <div>
+          <h1 className="font-hud" style={{ fontSize: 20, fontWeight: 700, marginBottom: 20 }}>Quels jours ?</h1>
+          <DaySelector frequency={answers.frequency} selected={answers.days} onToggle={toggleDay} error={answers.daysError} />
+        </div>
+      )}
+
+      <div style={{ flex: 1 }} />
+      <div style={{ display: "flex", gap: 10, marginTop: 24 }}>
+        {step > 0 && <RoundButton onClick={back}>← Retour</RoundButton>}
+        <div style={{ flex: 1 }}>
+          <RoundButton onClick={next} active={canNext} full style={{ opacity: canNext ? 1 : 0.4, pointerEvents: canNext ? "auto" : "none" }}>
+            Suivant →
+          </RoundButton>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+
+function TaskDetail({ kind, item, requirePhoto, onClose, onStart }) {
+  const already = kind === "daily" && item.done;
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 55, background: "rgba(0,0,0,.65)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 480, background: "linear-gradient(180deg, #131C27, #0C1218)", borderTop: "1px solid #233041", borderRadius: "18px 18px 0 0", padding: "20px 20px 28px", animation: "slideUp .3s ease" }}>
+        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: "#7C8896", fontSize: 18 }}>✕</button>
+        </div>
+        <h2 className="font-hud" style={{ fontSize: 18, fontWeight: 700, marginTop: -6, marginBottom: 10 }}>{item.text}</h2>
+        <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
+          <span style={{ fontSize: 11, fontFamily: "monospace", color: STATS[item.stat].color, background: STATS[item.stat].color + "18", border: "1px solid " + STATS[item.stat].color + "40", borderRadius: 6, padding: "3px 8px" }}>
+            {STATS[item.stat].emoji} {STATS[item.stat].label}
+          </span>
+          {item.difficulty && (
+            <span style={{ fontSize: 11, fontFamily: "monospace", color: "#7C8896", background: "#1A2330", border: "1px solid #233041", borderRadius: 6, padding: "3px 8px" }}>
+              {DIFF[item.difficulty].label}
+            </span>
+          )}
+        </div>
+        <div style={{ fontSize: 13, color: "#B9C2CC", lineHeight: 1.6, marginBottom: 20 }}>
+          {item.description && item.description.trim() ? item.description : "Aucune description fournie pour cette tâche."}
+        </div>
+        {already ? (
+          <div style={{ fontSize: 12, color: "#4ADE80", fontFamily: "monospace", textAlign: "center", padding: "10px 0" }}>✓ Déjà validée aujourd'hui</div>
+        ) : (
+          <GlowButton onClick={onStart} accent="#45E0D1" active full>
+            {requirePhoto ? "▶ Commencer (10s + preuve photo)" : "▶ Commencer (10s de concentration)"}
+          </GlowButton>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function CaptureOverlay({ fx, videoRef, streamRef, onCancel }) {
+  const previewRef = useRef(null);
+  useEffect(() => {
+    if (!fx.noCam && previewRef.current && videoRef.current && videoRef.current.srcObject) {
+      previewRef.current.srcObject = videoRef.current.srcObject;
+      previewRef.current.play().catch(() => {});
+    }
+  }, [fx.phase]);
+
+  if (fx.phase === "done") {
+    return (
+      <div style={{ position: "fixed", inset: 0, zIndex: 60, background: "rgba(6,10,15,.96)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24 }}>
+        {fx.capturedImg && <img src={fx.capturedImg} alt="preuve" style={{ width: 120, height: 120, objectFit: "cover", borderRadius: 12, border: "2px solid #4ADE80", marginBottom: 16 }} />}
+        <div className="font-hud" style={{ fontSize: 18, fontWeight: 700, color: "#4ADE80" }}>✓ Quête validée</div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 60, background: "rgba(6,10,15,.97)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24, textAlign: "center" }}>
+      {!fx.noCam && (
+        <video ref={previewRef} playsInline muted style={{ width: 96, height: 96, borderRadius: "50%", objectFit: "cover", border: "2px solid #45E0D1", marginBottom: 24, boxShadow: "0 0 20px #45E0D155" }} />
+      )}
+      {fx.phase === "countdown" && (
+        <React.Fragment>
+          <div className="font-hud" style={{ fontSize: 12, color: "#7C8896", letterSpacing: 2, marginBottom: 10 }}>PRÉPARE-TOI...</div>
+          <div className="font-hud" style={{ fontSize: 64, fontWeight: 700, color: "#45E0D1", textShadow: "0 0 24px #45E0D1" }}>{fx.n}</div>
+        </React.Fragment>
+      )}
+      {fx.phase === "exercise" && (
+        <React.Fragment>
+          <div className="font-hud" style={{ fontSize: 16, fontWeight: 700, color: "#4ADE80", marginBottom: 8 }}>GO ! Fais ta quête maintenant</div>
+          <div style={{ fontSize: 12, color: "#7C8896", fontFamily: "monospace" }}>
+            {fx.noCam ? "Reste concentré..." : (fx.snapped ? "📸 Photo prise" : "La photo peut être prise à tout moment...")}
+          </div>
+        </React.Fragment>
+      )}
+      <button onClick={onCancel} className="font-hud" style={{ marginTop: 28, background: "none", border: "1px solid #3A4657", color: "#7C8896", borderRadius: 8, padding: "8px 16px", fontSize: 12 }}>
+        Annuler
+      </button>
+    </div>
+  );
+}
+
+function App() {
+  const [state, setState] = useState(null);
+  const [tab, setTab] = useState("dailies");
+  const [toast, setToast] = useState(null);
+  const [levelUpFx, setLevelUpFx] = useState(false);
+  const [addingFor, setAddingFor] = useState(null);
+  const [musicOn, setMusicOn] = useState(false);
+  const [taskDetail, setTaskDetail] = useState(null); // { kind: 'daily'|'todo', item }
+  const [captureFx, setCaptureFx] = useState(null); // { phase: 'countdown'|'exercise'|'done', n, kind, item }
+  const [lightbox, setLightbox] = useState(null);
+  const toastTimer = useRef(null);
+  const audioRef = useRef({ ctx: null, nodes: [] });
+  const streamRef = useRef(null);
+  const videoRef = useRef(null);
+
+  function startAmbient() {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const master = ctx.createGain(); master.gain.value = 0.0001;
+      master.connect(ctx.destination);
+      master.gain.linearRampToValueAtTime(0.16, ctx.currentTime + 2.5);
+
+      const filter = ctx.createBiquadFilter();
+      filter.type = "lowpass"; filter.frequency.value = 220; filter.Q.value = 0.9;
+      filter.connect(master);
+
+      // deep dissonant drone (minor 2nd interval = unsettling beating)
+      const osc1 = ctx.createOscillator(); osc1.type = "sawtooth"; osc1.frequency.value = 41.2; // E1
+      const osc2 = ctx.createOscillator(); osc2.type = "sine"; osc2.frequency.value = 43.65; // F1
+      const sub = ctx.createOscillator(); sub.type = "sine"; sub.frequency.value = 20.6; // felt more than heard
+      const oscGain = ctx.createGain(); oscGain.gain.value = 0.55;
+      const subGain = ctx.createGain(); subGain.gain.value = 0.5;
+      osc1.connect(oscGain); osc2.connect(oscGain); oscGain.connect(filter);
+      sub.connect(subGain); subGain.connect(filter);
+
+      const lfo = ctx.createOscillator(); lfo.type = "sine"; lfo.frequency.value = 0.05;
+      const lfoGain = ctx.createGain(); lfoGain.gain.value = 70;
+      lfo.connect(lfoGain); lfoGain.connect(filter.frequency);
+
+      const bufSize = ctx.sampleRate * 2;
+      const buf = ctx.createBuffer(1, bufSize, ctx.sampleRate);
+      const data = buf.getChannelData(0);
+      for (let i = 0; i < bufSize; i++) data[i] = (Math.random() * 2 - 1) * 0.35;
+      const noise = ctx.createBufferSource(); noise.buffer = buf; noise.loop = true;
+      const noiseFilter = ctx.createBiquadFilter(); noiseFilter.type = "bandpass"; noiseFilter.frequency.value = 140; noiseFilter.Q.value = 0.7;
+      const noiseGain = ctx.createGain(); noiseGain.gain.value = 0.22;
+      noise.connect(noiseFilter); noiseFilter.connect(noiseGain); noiseGain.connect(filter);
+
+      [osc1, osc2, sub, lfo, noise].forEach((n) => n.start());
+
+      // sparse melancholic melody, plays over the drone
+      const scale = [146.83, 164.81, 174.61, 196.0, 220.0, 246.94, 261.63]; // D minor-ish, D3..C4
+      let melodyTimer = null;
+      function scheduleMelody() {
+        const wait = 2600 + Math.random() * 3200;
+        melodyTimer = setTimeout(() => {
+          if (!audioRef.current.ctx) return;
+          const t = ctx.currentTime;
+          const freq = scale[Math.floor(Math.random() * scale.length)];
+          const note = ctx.createOscillator(); note.type = "triangle"; note.frequency.value = freq;
+          const noteFilter = ctx.createBiquadFilter(); noteFilter.type = "lowpass"; noteFilter.frequency.value = 900;
+          const noteGain = ctx.createGain(); noteGain.gain.setValueAtTime(0.0001, t);
+          noteGain.gain.linearRampToValueAtTime(0.09, t + 0.6);
+          noteGain.gain.exponentialRampToValueAtTime(0.0001, t + 3.2);
+          note.connect(noteFilter); noteFilter.connect(noteGain); noteGain.connect(master);
+          note.start(t); note.stop(t + 3.3);
+          scheduleMelody();
+        }, wait);
+      }
+      scheduleMelody();
+
+      // distant ominous toll, irregular interval
+      let tollTimer = null;
+      function scheduleToll() {
+        const wait = 7000 + Math.random() * 8000;
+        tollTimer = setTimeout(() => {
+          if (!audioRef.current.ctx) return;
+          const t = ctx.currentTime;
+          const bell = ctx.createOscillator(); bell.type = "sine"; bell.frequency.value = 98;
+          const bell2 = ctx.createOscillator(); bell2.type = "sine"; bell2.frequency.value = 131;
+          const bellGain = ctx.createGain(); bellGain.gain.setValueAtTime(0.0001, t);
+          bellGain.gain.linearRampToValueAtTime(0.5, t + 0.15);
+          bellGain.gain.exponentialRampToValueAtTime(0.0001, t + 4.5);
+          bell.connect(bellGain); bell2.connect(bellGain); bellGain.connect(filter);
+          bell.start(t); bell2.start(t);
+          bell.stop(t + 5); bell2.stop(t + 5);
+          scheduleToll();
+        }, wait);
+      }
+      scheduleToll();
+
+      audioRef.current = { ctx, nodes: [osc1, osc2, sub, lfo, noise], master, cleanup: () => { clearTimeout(tollTimer); clearTimeout(melodyTimer); } };
+    } catch (e) {}
+  }
+
+  function stopAmbient() {
+    const { ctx, nodes, master, cleanup } = audioRef.current;
+    if (!ctx) return;
+    if (cleanup) cleanup();
+    try {
+      if (master) master.gain.linearRampToValueAtTime(0.0001, ctx.currentTime + 0.8);
+      setTimeout(() => {
+        nodes.forEach((n) => { try { n.stop(); } catch (e) {} });
+        ctx.close();
+      }, 900);
+    } catch (e) {}
+    audioRef.current = { ctx: null, nodes: [] };
+  }
+
+  function toggleMusic() {
+    setMusicOn((prev) => {
+      if (!prev) startAmbient(); else stopAmbient();
+      return !prev;
+    });
+  }
+
+  useEffect(() => () => stopAmbient(), []);
+
+  useEffect(() => {
+    let loaded = loadState();
+    const today = todayStr();
+    if (loaded.lastLogin !== today) {
+      let hp = loaded.character.hp;
+      loaded.dailies = loaded.dailies.map((d) => {
+        if (!d.done) { hp -= Math.round(3 * DIFF[d.difficulty].mult); return { ...d, done: false, streak: 0 }; }
+        return { ...d, done: false, streak: (d.streak || 0) + 1 };
+      });
+      loaded.character.hp = Math.max(0, hp);
+      loaded.lastLogin = today;
+    }
+    setState(loaded);
+  }, []);
+
+  useEffect(() => { if (state) saveState(state); }, [state]);
+
+  // Meilleur effort : un message de motivation par jour à l'ouverture (pas de vraie notif en arrière-plan sans serveur push)
+  useEffect(() => {
+    if (!state || !state.onboarded || !state.motivation) return;
+    const today = todayStr();
+    if (state.lastMotivDate === today) return;
+    const msgs = MOTIVATION_MESSAGES;
+    const msg = msgs[state.motivation] || "Une nouvelle journée, une nouvelle quête.";
+    setState((prev) => ({ ...prev, lastMotivDate: today }));
+    setTimeout(() => {
+      showToast(msg, "#2F7FFF");
+      if ("Notification" in window) {
+        if (Notification.permission === "granted") {
+          try { new Notification("Level Up", { body: msg }); } catch (e) {}
+        } else if (Notification.permission !== "denied") {
+          Notification.requestPermission();
+        }
+      }
+    }, 800);
+  }, [state && state.onboarded, state && state.lastMotivDate]);
+
+  function showToast(msg, color = "#45E0D1") {
+    setToast({ msg, color });
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 2200);
+  }
+
+  function applyReward(statKey, mult = 1) {
+    setState((prev) => {
+      const c = { ...prev.character, stats: { ...prev.character.stats } };
+      const gainedXp = Math.round(BASE_XP * mult);
+      const gainedGold = Math.round(BASE_GOLD * mult);
+      c.xp += gainedXp; c.gold += gainedGold;
+      if (statKey) c.stats[statKey] = (c.stats[statKey] || 0) + Math.max(1, Math.round(mult));
+      let leveled = false, need = xpToNext(c.level);
+      while (c.xp >= need) { c.xp -= need; c.level += 1; c.maxHp += 5; c.hp = c.maxHp; leveled = true; need = xpToNext(c.level); }
+      if (leveled) { setLevelUpFx(true); setTimeout(() => setLevelUpFx(false), 1800); showToast("NIVEAU " + c.level + " ATTEINT", "#E8B44A"); }
+      else { showToast("+" + gainedXp + " XP  +" + gainedGold + " or", "#45E0D1"); }
+      return { ...prev, character: c };
+    });
+  }
+  function applyPenalty(mult = 1) {
+    setState((prev) => {
+      const c = { ...prev.character };
+      const dmg = Math.round(4 * mult);
+      c.hp = Math.max(0, c.hp - dmg);
+      showToast("-" + dmg + " PV", "#FF5C5C");
+      return { ...prev, character: c };
+    });
+  }
+  function reallyToggleDaily(id) {
+    const d = state.dailies.find((x) => x.id === id);
+    if (!d) return;
+    setState((prev) => ({ ...prev, dailies: prev.dailies.map((x) => (x.id === id ? { ...x, done: !x.done } : x)) }));
+    if (!d.done) applyReward(d.stat, DIFF[d.difficulty].mult);
+  }
+  function reallyCompleteTodo(id) {
+    const t = state.todos.find((x) => x.id === id);
+    if (!t) return;
+    applyReward(t.stat, DIFF[t.difficulty].mult);
+    setState((prev) => ({ ...prev, todos: prev.todos.filter((x) => x.id !== id) }));
+  }
+  function saveProof(taskId, taskName, dataUrl) {
+    setState((prev) => ({
+      ...prev,
+      proofsHistory: [{ id: uid(), taskId, taskName, ts: Date.now(), img: dataUrl }, ...(prev.proofsHistory || [])].slice(0, 400),
+    }));
+  }
+  function latestProofFor(taskId) {
+    const hist = (state.proofsHistory || []).filter((p) => p.taskId === taskId);
+    return hist.length ? hist[0] : null;
+  }
+
+  function requestToggleDaily(id) {
+    const d = state.dailies.find((x) => x.id === id);
+    if (!d) return;
+    if (!d.done) openTaskDetail("daily", d); else reallyToggleDaily(id);
+  }
+  function requestCompleteTodo(id) {
+    const t = state.todos.find((x) => x.id === id);
+    if (!t) return;
+    openTaskDetail("todo", t);
+  }
+  function openTaskDetail(kind, item) { setTaskDetail({ kind, item }); }
+
+  async function beginTask(kind, item) {
+    setTaskDetail(null);
+    if (!state.requirePhoto) {
+      setCaptureFx({ phase: "countdown", n: 10, kind, item, noCam: true });
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        try { await videoRef.current.play(); } catch (e) {}
+      }
+      setCaptureFx({ phase: "countdown", n: 10, kind, item, noCam: false });
+    } catch (e) {
+      showToast("Caméra indisponible, tâche validée sans preuve", "#FF5C5C");
+      finalizeTask(kind, item, null);
+    }
+  }
+
+  useEffect(() => {
+    if (!captureFx) return;
+    if (captureFx.phase === "countdown") {
+      if (captureFx.n <= 0) {
+        const exDuration = 6 + Math.floor(Math.random() * 8); // 6-13s
+        const snapAt = 2 + Math.random() * (exDuration - 3); // random moment, not the very start/end
+        setCaptureFx((p) => ({ ...p, phase: "exercise", n: exDuration, snapAt, elapsed: 0, snapped: false }));
+        return;
+      }
+      const t = setTimeout(() => setCaptureFx((p) => (p ? { ...p, n: p.n - 1 } : p)), 1000);
+      return () => clearTimeout(t);
+    }
+    if (captureFx.phase === "exercise") {
+      if (captureFx.elapsed >= captureFx.n) {
+        finishExercisePhase();
+        return;
+      }
+      if (!captureFx.snapped && captureFx.elapsed >= captureFx.snapAt && !captureFx.noCam) {
+        snapCandidPhoto();
+      }
+      const t = setTimeout(() => setCaptureFx((p) => (p ? { ...p, elapsed: p.elapsed + 1 } : p)), 1000);
+      return () => clearTimeout(t);
+    }
+  }, [captureFx]);
+
+  function snapCandidPhoto() {
+    setCaptureFx((p) => (p ? { ...p, snapped: true } : p));
+    try {
+      const video = videoRef.current;
+      if (!video || !video.videoWidth) return;
+      const canvas = document.createElement("canvas");
+      const w = video.videoWidth, h = video.videoHeight;
+      const maxW = 220; const scale = Math.min(1, maxW / w);
+      canvas.width = Math.max(1, Math.round(w * scale)); canvas.height = Math.max(1, Math.round(h * scale));
+      const cctx = canvas.getContext("2d");
+      cctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const dataUrl = canvas.toDataURL("image/jpeg", 0.55);
+      setCaptureFx((p) => (p ? { ...p, capturedImg: dataUrl } : p));
+    } catch (e) {}
+  }
+
+  function finishExercisePhase() {
+    const fx = captureFx;
+    if (streamRef.current) { streamRef.current.getTracks().forEach((tr) => tr.stop()); streamRef.current = null; }
+    if (videoRef.current) videoRef.current.srcObject = null;
+    if (!fx) return;
+    if (fx.capturedImg) saveProof(fx.item.id, fx.item.text, fx.capturedImg);
+    finalizeTask(fx.kind, fx.item, fx.capturedImg || null);
+    setCaptureFx({ phase: "done", capturedImg: fx.capturedImg || null });
+    setTimeout(() => setCaptureFx(null), 1600);
+  }
+
+  function finalizeTask(kind, item, img) {
+    if (kind === "daily") reallyToggleDaily(item.id); else reallyCompleteTodo(item.id);
+    showToast(img ? "Preuve enregistrée ✅" : "Tâche validée", img ? "#4ADE80" : "#45E0D1");
+  }
+
+  function cancelCapture() {
+    if (streamRef.current) { streamRef.current.getTracks().forEach((tr) => tr.stop()); streamRef.current = null; }
+    if (videoRef.current) videoRef.current.srcObject = null;
+    setCaptureFx(null);
+  }
+  function hitHabit(h) { h.negative ? applyPenalty(1) : applyReward(h.stat, 1); }
+  function buyReward(r) {
+    if (state.character.gold < r.cost) { showToast("Pas assez d'or", "#FF5C5C"); return; }
+    setState((prev) => ({ ...prev, character: { ...prev.character, gold: prev.character.gold - r.cost } }));
+    showToast("Récompense débloquée", "#E8B44A");
+  }
+  function addItem(kind, payload) {
+    setState((prev) => {
+      const item = { id: uid(), ...payload };
+      if (kind === "habit") return { ...prev, habits: [...prev.habits, item] };
+      if (kind === "daily") return { ...prev, dailies: [...prev.dailies, { ...item, done: false, streak: 0 }] };
+      if (kind === "todo") return { ...prev, todos: [...prev.todos, { ...item, done: false }] };
+      if (kind === "reward") return { ...prev, rewards: [...prev.rewards, item] };
+      return prev;
+    });
+    setAddingFor(null);
+  }
+  function removeItem(kind, id) { setState((prev) => ({ ...prev, [kind]: prev[kind].filter((x) => x.id !== id) })); }
+
+  function handleOnboardingComplete(answers) {
+    const stat = GOAL_STAT[answers.goal] || "disc";
+    const diffByLevel = answers.level === "debutant" ? "easy" : answers.level === "intermediaire" ? "medium" : "hard";
+    setState((prev) => {
+      const next = { ...prev, onboarded: true, profile: answers, motivation: answers.motivation, lastMotivDate: null };
+      next.character = {
+        ...prev.character,
+        name: answers.name,
+        className: answers.className,
+        rank: answers.rankName,
+        stats: { ...prev.character.stats, [stat]: (prev.character.stats[stat] || 0) + answers.bonus },
+      };
+      const exerciseDailies = (answers.exercises || []).slice(0, 4).map((ex) => ({
+        id: uid(), text: ex.name, description: ex.how, stat, difficulty: diffByLevel, done: false, streak: 0,
+      }));
+      next.dailies = [...exerciseDailies, ...prev.dailies];
+      return next;
+    });
+  }
+
+  if (!state) return <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}><div style={{ color: "#45E0D1", fontFamily: "monospace" }}>Chargement...</div></div>;
+
+  if (!state.onboarded) return <Onboarding onComplete={handleOnboardingComplete} />;
+
+  const c = state.character;
+  const need = xpToNext(c.level);
+
+  return (
+    <div style={{ minHeight: "100vh", paddingBottom: 96 }}>
+      {levelUpFx && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,.4)", pointerEvents: "none" }}>
+          <div className="font-hud" style={{ fontSize: 36, fontWeight: 700, color: "#E8B44A", textShadow: "0 0 20px #E8B44A" }}>LEVEL UP</div>
+        </div>
+      )}
+      {toast && (
+        <div className="font-hud" style={{ position: "fixed", top: 12, left: "50%", transform: "translateX(-50%)", zIndex: 50, fontSize: 12, padding: "6px 12px", borderRadius: 4, border: "1px solid " + toast.color, color: toast.color, background: "#0A0E14ee" }}>{toast.msg}</div>
+      )}
+
+      <div style={{ position: "sticky", top: 0, zIndex: 40, background: "rgba(10,14,20,.95)", backdropFilter: "blur(4px)", borderBottom: "1px solid #1A2330", padding: "16px 16px 12px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <div className="font-hud" style={{ width: 48, height: 48, borderRadius: "50%", border: "2px solid #45E0D1", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: "#45E0D1", fontSize: 18, boxShadow: "0 0 10px #45E0D155", flexShrink: 0 }}>{c.level}</div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <input value={c.name} onChange={(e) => setState((p) => ({ ...p, character: { ...p.character, name: e.target.value } }))}
+              className="font-hud" style={{ background: "transparent", border: "none", outline: "none", fontWeight: 600, fontSize: 14, width: "100%", color: "#E7ECEF" }} />
+            {c.className && (
+              <div className="font-hud" style={{ fontSize: 10, color: "#E8B44A", marginTop: -2 }}>{c.rank} {c.className}</div>
+            )}
+            <div style={{ display: "flex", alignItems: "center", gap: 4, margin: "4px 0" }}>
+              <span style={{ fontSize: 10, fontFamily: "monospace", color: "#7C8896" }}>{c.xp}/{need} XP</span>
+            </div>
+            <Bar value={c.xp} max={need} color="#45E0D1" height={6} />
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+            <button onClick={toggleMusic} style={{ background: "none", border: "1px solid " + (musicOn ? "#45E0D1" : "#233041"), borderRadius: 6, width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13 }}>
+              {musicOn ? "🔊" : "🔇"}
+            </button>
+            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+              <span style={{ fontSize: 12 }}>🪙</span>
+              <span style={{ fontFamily: "monospace", fontSize: 12, color: "#E8B44A" }}>{c.gold}</span>
+            </div>
+          </div>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
+          <span style={{ fontSize: 12 }}>❤️</span>
+          <Bar value={c.hp} max={c.maxHp} color="#FF5C5C" height={6} />
+          <span style={{ fontSize: 10, fontFamily: "monospace", color: "#7C8896", flexShrink: 0 }}>{c.hp}/{c.maxHp}</span>
+        </div>
+        <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
+          {Object.keys(STATS).map((k) => <StatChip key={k} statKey={k} value={c.stats[k] || 0} />)}
+        </div>
+      </div>
+
+      <div style={{ padding: "16px 16px 0" }}>
+        {tab === "dailies" && (
+          <Section title="Quotidiennes" emoji="🔁" onAdd={() => setAddingFor("daily")}>
+            {state.dailies.map((d) => (
+              <SysPanel key={d.id} className="mb2">
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <button onClick={() => requestToggleDaily(d.id)} style={{ width: 24, height: 24, borderRadius: 4, border: "1px solid " + (d.done ? "#4ADE80" : "#233041"), background: d.done ? "#4ADE8033" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                    {d.done && <span style={{ color: "#4ADE80" }}>✓</span>}
+                  </button>
+                  <div style={{ flex: 1, minWidth: 0, cursor: "pointer" }} onClick={() => openTaskDetail("daily", d)}>
+                    <div style={{ fontSize: 14, textDecoration: d.done ? "line-through" : "none", color: d.done ? "#7C8896" : "#E7ECEF" }}>{d.text}</div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 2 }}>
+                      <span style={{ fontSize: 10, fontFamily: "monospace", color: STATS[d.stat].color }}>{STATS[d.stat].label} · {DIFF[d.difficulty].label}</span>
+                      {d.streak > 0 && <span style={{ fontSize: 10, fontFamily: "monospace", color: "#E8B44A" }}>🔥{d.streak}</span>}
+                      <span style={{ fontSize: 10, color: "#3A4657" }}>ⓘ détails</span>
+                    </div>
+                  </div>
+                  {latestProofFor(d.id) && (
+                    <img src={latestProofFor(d.id).img} alt="preuve" style={{ width: 28, height: 28, borderRadius: 4, objectFit: "cover", border: "1px solid #233041", flexShrink: 0 }} />
+                  )}
+                  <button onClick={() => removeItem("dailies", d.id)} style={{ background: "none", border: "none", color: "#3A4657", flexShrink: 0 }}>🗑</button>
+                </div>
+              </SysPanel>
+            ))}
+            {state.dailies.length === 0 && <Empty text="Aucune quotidienne. Ajoute une routine à répéter chaque jour." />}
+          </Section>
+        )}
+        {tab === "habits" && (
+          <Section title="Habitudes" emoji="⚔️" onAdd={() => setAddingFor("habit")}>
+            {state.habits.map((h) => (
+              <SysPanel key={h.id} accent={h.negative ? "#FF5C5C" : "#4ADE80"}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <button onClick={() => hitHabit(h)} style={{ width: 32, height: 32, borderRadius: "50%", border: "1px solid " + (h.negative ? "#FF5C5C" : "#4ADE80"), color: h.negative ? "#FF5C5C" : "#4ADE80", background: "none", flexShrink: 0 }}>{h.negative ? "−" : "+"}</button>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 14 }}>{h.text}</div>
+                    <span style={{ fontSize: 10, fontFamily: "monospace", color: STATS[h.stat].color }}>{STATS[h.stat].label}</span>
+                  </div>
+                  <button onClick={() => removeItem("habits", h.id)} style={{ background: "none", border: "none", color: "#3A4657", flexShrink: 0 }}>🗑</button>
+                </div>
+              </SysPanel>
+            ))}
+            {state.habits.length === 0 && <Empty text="Aucune habitude. Ajoute un réflexe à encourager ou éviter." />}
+          </Section>
+        )}
+        {tab === "todos" && (
+          <Section title="Quêtes" emoji="📋" onAdd={() => setAddingFor("todo")}>
+            {state.todos.map((t) => (
+              <SysPanel key={t.id}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <button onClick={() => requestCompleteTodo(t.id)} style={{ width: 24, height: 24, borderRadius: 4, border: "1px solid #233041", background: "none", flexShrink: 0, color: "#3A4657" }}>✓</button>
+                  <div style={{ flex: 1, minWidth: 0, cursor: "pointer" }} onClick={() => openTaskDetail("todo", t)}>
+                    <div style={{ fontSize: 14 }}>{t.text}</div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontSize: 10, fontFamily: "monospace", color: STATS[t.stat].color }}>{STATS[t.stat].label} · {DIFF[t.difficulty].label}</span>
+                      <span style={{ fontSize: 10, color: "#3A4657" }}>ⓘ détails</span>
+                    </div>
+                  </div>
+                  <button onClick={() => removeItem("todos", t.id)} style={{ background: "none", border: "none", color: "#3A4657", flexShrink: 0 }}>🗑</button>
+                </div>
+              </SysPanel>
+            ))}
+            {state.todos.length === 0 && <Empty text="Aucune quête en attente. Ajoute une tâche ponctuelle." />}
+          </Section>
+        )}
+        {tab === "rewards" && (
+          <Section title="Récompenses" emoji="🎁" onAdd={() => setAddingFor("reward")}>
+            {state.rewards.map((r) => (
+              <SysPanel key={r.id} accent="#E8B44A">
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <div style={{ flex: 1, minWidth: 0, fontSize: 14 }}>{r.text}</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 4, fontFamily: "monospace", fontSize: 12, color: "#E8B44A", flexShrink: 0 }}>🪙{r.cost}</div>
+                  <button onClick={() => buyReward(r)} className="font-hud" style={{ fontSize: 10, fontWeight: 600, border: "1px solid #E8B44A", color: "#E8B44A", background: "none", borderRadius: 4, padding: "4px 8px", flexShrink: 0 }}>Échanger</button>
+                  <button onClick={() => removeItem("rewards", r.id)} style={{ background: "none", border: "none", color: "#3A4657", flexShrink: 0 }}>🗑</button>
+                </div>
+              </SysPanel>
+            ))}
+            {state.rewards.length === 0 && <Empty text="Aucune récompense définie. Ajoute un plaisir à débloquer avec ton or." />}
+          </Section>
+        )}
+        {tab === "gallery" && (
+          <Section title="Galerie" emoji="📸">
+            {(!state.proofsHistory || state.proofsHistory.length === 0) ? (
+              <Empty text="Aucune photo pour le moment. Active la preuve photo dans Perso pour commencer à documenter ton évolution." />
+            ) : (
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
+                {state.proofsHistory.map((p) => (
+                  <button key={p.id} onClick={() => setLightbox(p)} style={{ padding: 0, border: "1px solid #233041", borderRadius: 8, overflow: "hidden", background: "#0F1621" }}>
+                    <img src={p.img} alt={p.taskName} style={{ width: "100%", aspectRatio: "1/1", objectFit: "cover", display: "block" }} />
+                    <div style={{ padding: "4px 6px", fontSize: 9, color: "#7C8896", fontFamily: "monospace", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      {new Date(p.ts).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" })}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </Section>
+        )}
+        {tab === "perso" && (
+          <Section title="Personnage" emoji="🧑">
+            {c.className && (
+              <SysPanel accent="#E8B44A" className="mb2">
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <span style={{ fontSize: 22 }}>{(CLASSES[Object.keys(CLASSES).find((k) => CLASSES[k].name === c.className)] || {}).emoji || "🎖️"}</span>
+                  <div>
+                    <div className="font-hud" style={{ fontWeight: 700, color: "#E8B44A", fontSize: 14 }}>{c.rank} {c.className}</div>
+                    <div style={{ fontSize: 11, color: "#7C8896" }}>Classe déterminée lors de l'éveil</div>
+                  </div>
+                </div>
+              </SysPanel>
+            )}
+            <SysPanel>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                {Object.entries(STATS).map(([k, s]) => (
+                  <div key={k} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontSize: 18 }}>{s.emoji}</span>
+                    <div>
+                      <div style={{ fontSize: 10, fontFamily: "monospace", color: "#7C8896" }}>{s.label}</div>
+                      <div className="font-hud" style={{ fontWeight: 700, color: s.color }}>{c.stats[k] || 0}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </SysPanel>
+            <div style={{ marginTop: 12 }}>
+              <GlowButton
+                accent="#FF5C5C"
+                full
+                active={!!state.requirePhoto}
+                onClick={() => setState((prev) => ({ ...prev, requirePhoto: !prev.requirePhoto }))}
+              >
+                {state.requirePhoto ? "📷 Preuve photo : activée" : "📷 Activer la preuve photo"}
+              </GlowButton>
+              <div style={{ fontSize: 10, color: "#7C8896", marginTop: 6, lineHeight: 1.5 }}>
+                Ouvre la caméra à chaque quête validée et garde une photo horodatée en preuve. Ce n'est pas une IA qui vérifie le mouvement — juste de quoi te rendre des comptes à toi-même.
+              </div>
+            </div>
+            <div style={{ marginTop: 10 }}>
+              <GlowButton
+                accent="#7C8896"
+                full
+                onClick={() => {
+                  if (window.confirm("Refaire le quiz d'éveil ? Ta progression actuelle reste intacte, seule ta classe sera redéfinie.")) {
+                    setState((prev) => ({ ...prev, onboarded: false }));
+                  }
+                }}
+              >
+                🔄 Refaire le quiz d'éveil
+              </GlowButton>
+            </div>
+          </Section>
+        )}
+      </div>
+
+      {addingFor && <AddModal kind={addingFor} onClose={() => setAddingFor(null)} onSubmit={(p) => addItem(addingFor, p)} />}
+
+      {taskDetail && (
+        <TaskDetail
+          kind={taskDetail.kind}
+          item={taskDetail.item}
+          requirePhoto={!!state.requirePhoto}
+          onClose={() => setTaskDetail(null)}
+          onStart={() => beginTask(taskDetail.kind, taskDetail.item)}
+        />
+      )}
+
+      {captureFx && (
+        <CaptureOverlay fx={captureFx} videoRef={videoRef} onCancel={cancelCapture} />
+      )}
+
+      {lightbox && (
+        <div onClick={() => setLightbox(null)} style={{ position: "fixed", inset: 0, zIndex: 60, background: "rgba(0,0,0,.9)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 20 }}>
+          <img src={lightbox.img} alt={lightbox.taskName} style={{ maxWidth: "100%", maxHeight: "70vh", borderRadius: 10, border: "1px solid #233041" }} />
+          <div className="font-hud" style={{ marginTop: 12, fontSize: 13, color: "#E7ECEF" }}>{lightbox.taskName}</div>
+          <div style={{ fontSize: 11, color: "#7C8896", fontFamily: "monospace", marginTop: 2 }}>{new Date(lightbox.ts).toLocaleString("fr-FR")}</div>
+        </div>
+      )}
+
+      {/* persistent hidden video element used for candid capture during proof tasks */}
+      <video ref={videoRef} playsInline muted style={{ position: "fixed", width: 1, height: 1, opacity: 0, pointerEvents: "none", top: 0, left: 0 }} />
+
+      <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, background: "rgba(10,14,20,.95)", backdropFilter: "blur(4px)", borderTop: "1px solid #1A2330", display: "flex", zIndex: 40 }}>
+        {[
+          { id: "dailies", emoji: "🔁", label: "Quotid." },
+          { id: "habits", emoji: "⚔️", label: "Habitudes" },
+          { id: "todos", emoji: "📋", label: "Quêtes" },
+          { id: "rewards", emoji: "🎁", label: "Récomp." },
+          { id: "gallery", emoji: "📸", label: "Galerie" },
+          { id: "perso", emoji: "🧑", label: "Perso" },
+        ].map((t) => (
+          <button key={t.id} onClick={() => setTab(t.id)} className="font-hud" style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 2, padding: "10px 0", background: "none", border: "none", color: tab === t.id ? "#45E0D1" : "#4A5568" }}>
+            <span style={{ fontSize: 16 }}>{t.emoji}</span>
+            <span style={{ fontSize: 9 }}>{t.label}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function Section({ title, emoji, children, onAdd }) {
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+        <div className="font-hud" style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 600, fontSize: 14, textTransform: "uppercase", letterSpacing: .5 }}>
+          <span>{emoji}</span>{title}
+        </div>
+        {onAdd && <button onClick={onAdd} style={{ width: 28, height: 28, borderRadius: 4, border: "1px solid #45E0D1", color: "#45E0D1", background: "none" }}>+</button>}
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{children}</div>
+    </div>
+  );
+}
+function Empty({ text }) { return <div style={{ fontSize: 12, color: "#4A5568", fontFamily: "monospace", padding: "24px 0", textAlign: "center" }}>{text}</div>; }
+
+function AddModal({ kind, onClose, onSubmit }) {
+  const [text, setText] = useState("");
+  const [description, setDescription] = useState("");
+  const [stat, setStat] = useState("str");
+  const [difficulty, setDifficulty] = useState("medium");
+  const [negative, setNegative] = useState(false);
+  const [cost, setCost] = useState(30);
+  const titles = { habit: "Nouvelle habitude", daily: "Nouvelle quotidienne", todo: "Nouvelle quête", reward: "Nouvelle récompense" };
+
+  function submit() {
+    if (!text.trim()) return;
+    if (kind === "reward") onSubmit({ text: text.trim(), cost: Math.max(1, Number(cost) || 1) });
+    else if (kind === "habit") onSubmit({ text: text.trim(), stat, negative });
+    else onSubmit({ text: text.trim(), description: description.trim(), stat, difficulty });
+  }
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 50, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 480, background: "#0F1621", borderTop: "1px solid #233041", borderLeft: "1px solid #233041", borderRight: "1px solid #233041", borderRadius: "8px 8px 0 0", padding: "16px 16px 24px" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+          <div className="font-hud" style={{ fontWeight: 600, fontSize: 14 }}>{titles[kind]}</div>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: "#7C8896", fontSize: 18 }}>✕</button>
+        </div>
+        <input autoFocus value={text} onChange={(e) => setText(e.target.value)} placeholder="Texte..."
+          style={{ width: "100%", background: "#131C27", border: "1px solid #233041", borderRadius: 4, padding: "8px 12px", fontSize: 14, outline: "none", color: "#E7ECEF", marginBottom: 12 }} />
+        {(kind === "daily" || kind === "todo") && (
+          <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Description : que faut-il faire exactement ? (optionnel)" rows={3}
+            style={{ width: "100%", background: "#131C27", border: "1px solid #233041", borderRadius: 4, padding: "8px 12px", fontSize: 13, outline: "none", color: "#E7ECEF", marginBottom: 12, resize: "vertical", fontFamily: "inherit" }} />
+        )}
+        {kind === "reward" ? (
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 11, fontFamily: "monospace", color: "#7C8896", marginBottom: 4 }}>Coût en or</div>
+            <input type="number" value={cost} onChange={(e) => setCost(e.target.value)}
+              style={{ width: "100%", background: "#131C27", border: "1px solid #233041", borderRadius: 4, padding: "8px 12px", fontSize: 14, outline: "none", color: "#E7ECEF" }} />
+          </div>
+        ) : (
+          <React.Fragment>
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 11, fontFamily: "monospace", color: "#7C8896", marginBottom: 4 }}>Statistique liée</div>
+              <StatPicker value={stat} onChange={setStat} />
+            </div>
+            {kind === "habit" ? (
+              <div style={{ marginBottom: 12, display: "flex", gap: 8 }}>
+                <button onClick={() => setNegative(false)} className="font-hud" style={{ flex: 1, padding: "8px 0", borderRadius: 4, fontSize: 12, border: "1px solid " + (!negative ? "#4ADE80" : "#233041"), color: !negative ? "#4ADE80" : "#7C8896", background: "none" }}>Bonne habitude (+)</button>
+                <button onClick={() => setNegative(true)} className="font-hud" style={{ flex: 1, padding: "8px 0", borderRadius: 4, fontSize: 12, border: "1px solid " + (negative ? "#FF5C5C" : "#233041"), color: negative ? "#FF5C5C" : "#7C8896", background: "none" }}>Mauvaise habitude (-)</button>
+              </div>
+            ) : (
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 11, fontFamily: "monospace", color: "#7C8896", marginBottom: 4 }}>Difficulté</div>
+                <DiffPicker value={difficulty} onChange={setDifficulty} />
+              </div>
+            )}
+          </React.Fragment>
+        )}
+        <button onClick={submit} className="font-hud" style={{ width: "100%", background: "#45E0D1", color: "#0A0E14", fontWeight: 600, fontSize: 14, border: "none", borderRadius: 4, padding: "10px 0", marginTop: 4 }}>Ajouter</button>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  });
+}
+</script>
+</body>
+</html>
